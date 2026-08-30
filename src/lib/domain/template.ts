@@ -44,7 +44,23 @@ export async function listTemplates(workspaceId: WorkspaceId) {
   return results;
 }
 
-export async function createTemplate(workspaceId: WorkspaceId, name: string) {
+/**
+ * Creates a template, its first (draft) version, and its requirement
+ * definitions in one transaction. There is no name-only creation path:
+ * a template with zero requirements is not a useful state to persist, so
+ * the new-template page collects at least one requirement before this is
+ * ever called (enforced again here, defensively, in case a future caller
+ * skips the UI's own check).
+ */
+export async function createTemplateWithRequirements(
+  workspaceId: WorkspaceId,
+  name: string,
+  requirements: RequirementDefinitionInput[],
+) {
+  if (requirements.length === 0) {
+    throw new Error('A template needs at least one requirement.');
+  }
+
   const s = scoped(workspaceId);
   return s.db.transaction(async (tx) => {
     const [template] = await tx
@@ -59,7 +75,12 @@ export async function createTemplate(workspaceId: WorkspaceId, name: string) {
       .returning();
     if (!version) throw new Error('Failed to create template version.');
 
-    return { template, version };
+    const definitions = await tx
+      .insert(schema.requirementDefinition)
+      .values(requirements.map((r) => ({ workspaceId, templateVersionId: version.id, ...r })))
+      .returning();
+
+    return { template, version, definitions };
   });
 }
 

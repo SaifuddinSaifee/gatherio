@@ -21,22 +21,30 @@ test('template lifecycle: draft, add requirements, publish, instantiate a case, 
   await page.click('button[type=submit]');
   await page.waitForURL('**/dashboard');
 
-  // Create a template.
+  // Create a template — name plus its first requirements are one action
+  // now (no intermediate "name only" template ever gets persisted).
   await page.goto('/templates/new');
   await page.fill('#name', 'Vendor Onboarding');
+
+  // First row: title only, action type defaults to Upload.
+  await page.getByLabel('Requirement 1 title').fill('Insurance certificate');
+
+  // Add a second row and make it an Answer-type requirement via the
+  // segmented Action type control — the Answer type select should only
+  // appear once Answer is selected.
+  await page.click('button:has-text("Add requirement")');
+  await page.getByLabel('Requirement 2 title').fill('Any new subcontractors?');
+  await expect(page.getByLabel('Answer type')).toHaveCount(0);
+  await page
+    .getByRole('radiogroup', { name: 'Requirement 2 action type' })
+    .getByRole('radio', { name: 'Answer' })
+    .click();
+  await expect(page.getByLabel('Answer type')).toBeVisible();
+  await page.getByLabel('Answer type').selectOption('yes_no');
+
   await page.click('button:has-text("Create template")');
   await page.waitForURL(/\/templates\/[^/]+$/);
-
-  // Add two requirements.
-  await page.fill('#title', 'Insurance certificate');
-  await page.selectOption('#actionType', 'upload');
-  await page.click('button:has-text("Add requirement")');
   await expect(page.getByText('Insurance certificate')).toBeVisible();
-
-  await page.fill('#title', 'Any new subcontractors?');
-  await page.selectOption('#actionType', 'answer');
-  await page.selectOption('#answerFieldType', 'yes_no');
-  await page.click('button:has-text("Add requirement")');
   await expect(page.getByText('Any new subcontractors?')).toBeVisible();
 
   // Publish. Draft-only controls (Edit links, Add-requirement form) must disappear.
@@ -92,4 +100,42 @@ test('template lifecycle: draft, add requirements, publish, instantiate a case, 
   await page.goto(caseUrl);
   await expect(page.getByText('Insurance certificate')).toBeVisible();
   await expect(page.getByText('Any new subcontractors?')).toBeVisible();
+});
+
+/**
+ * The new-template page's two most recent, explicitly-requested behaviors:
+ * a template with zero requirements is never persisted (removing the only
+ * row and submitting must fail client-side, not create an empty template),
+ * and rows can be reordered without a mouse (the up/down buttons exercise
+ * the same reorder logic the drag handle uses).
+ */
+test('new-template form rejects zero requirements and supports keyboard reordering', async ({
+  page,
+}) => {
+  const email = `stage5-e2e-builder-${Date.now()}@example.com`;
+  const password = 'correcthorsebatterystaple';
+
+  await page.goto('/sign-up');
+  await page.fill('#name', 'Builder Tester');
+  await page.fill('#email', email);
+  await page.fill('#password', password);
+  await page.fill('#workspaceName', 'Builder Workspace');
+  await page.click('button[type=submit]');
+  await page.waitForURL('**/dashboard');
+
+  await page.goto('/templates/new');
+  await page.fill('#name', 'Empty Attempt');
+  await page.getByRole('button', { name: 'Remove requirement 1' }).click();
+  await page.click('button:has-text("Create template")');
+  await expect(page.locator('p[role="alert"]')).toContainText('at least one requirement');
+  expect(page.url()).toContain('/templates/new');
+
+  await page.click('button:has-text("Add requirement")');
+  await page.click('button:has-text("Add requirement")');
+  await page.getByLabel('Requirement 1 title').fill('First');
+  await page.getByLabel('Requirement 2 title').fill('Second');
+
+  await page.getByRole('button', { name: 'Move requirement 1 down' }).click();
+  await expect(page.getByLabel('Requirement 1 title')).toHaveValue('Second');
+  await expect(page.getByLabel('Requirement 2 title')).toHaveValue('First');
 });

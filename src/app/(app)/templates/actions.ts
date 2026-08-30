@@ -11,13 +11,46 @@ async function requireSession() {
   return session;
 }
 
-export async function createTemplateAction(formData: FormData): Promise<void> {
-  const session = await requireSession();
-  const name = String(formData.get('name') ?? '').trim();
-  if (!name) redirect('/templates/new?error=Name+is+required');
+export interface CreateTemplateInput {
+  name: string;
+  requirements: RequirementDefinitionInput[];
+}
 
-  const { template } = await templates.createTemplate(session.workspaceId, name);
-  redirect(`/templates/${template.id}`);
+/**
+ * Called directly from the new-template client component (not bound to a
+ * <form action>), since that form is a JS-driven multi-row builder with no
+ * FormData to submit. Returns an error string instead of redirecting on
+ * failure, so the client keeps the requester's in-progress rows on screen
+ * instead of losing them to a full-page redirect — a real UX improvement
+ * over the old ?error= query-param pattern, made possible because this
+ * page needs client JS anyway.
+ */
+export async function createTemplateWithRequirementsAction(
+  input: CreateTemplateInput,
+): Promise<{ templateId: string } | { error: string }> {
+  const session = await getCurrentSession();
+  if (!session) return { error: 'Your session has expired. Please sign in again.' };
+
+  const name = input.name.trim();
+  if (!name) return { error: 'Template name is required.' };
+
+  const requirements = input.requirements.map((r) => ({ ...r, title: r.title.trim() }));
+  if (requirements.length === 0) return { error: 'Add at least one requirement.' };
+  const missingTitleIndex = requirements.findIndex((r) => !r.title);
+  if (missingTitleIndex !== -1) {
+    return { error: `Requirement ${missingTitleIndex + 1} needs a title.` };
+  }
+
+  try {
+    const { template } = await templates.createTemplateWithRequirements(
+      session.workspaceId,
+      name,
+      requirements,
+    );
+    return { templateId: template.id };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not create template.' };
+  }
 }
 
 export async function setTemplateArchivedAction(formData: FormData): Promise<void> {

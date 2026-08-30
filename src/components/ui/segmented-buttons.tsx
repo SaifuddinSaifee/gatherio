@@ -1,0 +1,85 @@
+'use client';
+
+import { MdCheck } from 'react-icons/md';
+import { cn } from '@/lib/cn';
+
+interface SegmentedButtonOption<T extends string> {
+  value: T;
+  label: string;
+}
+
+interface SegmentedButtonsProps<T extends string> {
+  options: SegmentedButtonOption<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  'aria-label': string;
+  className?: string;
+}
+
+/**
+ * Material 3 segmented button (single-select) — m3.material.io/components/
+ * segmented-buttons. Not in design-revised.md's component set, so built
+ * directly against the canonical M3 spec per the doc's own source-of-truth
+ * order (§ "Source-of-Truth Order": this design system, then current M3
+ * guidance). Outer pill shape with square-cornered inner joins (achieved
+ * via `first:rounded-l-full last:rounded-r-full` rather than a clipping
+ * `overflow-hidden` container, which would also clip the focus ring), a
+ * 1px divider between segments, and a real state-layer overlay per §9 —
+ * never a background-alpha blend.
+ *
+ * Selected segment shows a leading checkmark, not color alone (§72) —
+ * container/label swap to secondary-container / on-secondary-container.
+ *
+ * Implemented as `role="radio"` buttons in a `role="radiogroup"` (single-
+ * select semantics per ARIA authoring practices). Each button keeps its
+ * own tab stop rather than a fully roving-tabindex radiogroup — a
+ * deliberate, documented scope cut for a Phase 1a internal tool: still
+ * fully operable by keyboard (Tab + Enter/Space), just not idiomatic
+ * left/right arrow-key roving focus.
+ */
+export function SegmentedButtons<T extends string>({
+  options,
+  value,
+  onChange,
+  className,
+  ...props
+}: SegmentedButtonsProps<T>) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={props['aria-label']}
+      className={cn('inline-flex h-10', className)}
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              'group relative flex flex-1 items-center justify-center gap-1.5 border-y border-l border-md-outline px-4 text-label-large outline-none first:rounded-l-full last:rounded-r-full last:border-r focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2',
+              selected
+                ? 'bg-md-secondary-container text-md-on-secondary-container'
+                : 'bg-transparent text-md-on-surface',
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-(--duration-effects-fast) group-hover:opacity-(--opacity-state-hover) group-active:opacity-(--opacity-state-pressed)',
+                selected ? 'bg-md-on-secondary-container' : 'bg-md-on-surface',
+              )}
+            />
+            <span className="relative z-10 flex items-center gap-1.5">
+              {selected && <MdCheck aria-hidden="true" className="h-4.5 w-4.5" />}
+              {option.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
