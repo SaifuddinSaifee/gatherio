@@ -42,10 +42,20 @@ test('template lifecycle: draft, add requirements, publish, instantiate a case, 
   await expect(page.getByLabel('Answer type')).toBeVisible();
   await page.getByLabel('Answer type').selectOption('yes_no');
 
+  // The Required control is a Material switch (role="switch"), not a
+  // checkbox — toggle the second row off and confirm the toggle actually
+  // reaches the server: an unrequired requirement should render "(optional)"
+  // on the template detail page after creation.
+  const requiredSwitch = page.getByRole('switch', { name: 'Requirement 2 required' });
+  await expect(requiredSwitch).toHaveAttribute('aria-checked', 'true');
+  await requiredSwitch.click();
+  await expect(requiredSwitch).toHaveAttribute('aria-checked', 'false');
+
   await page.click('button:has-text("Create template")');
   await page.waitForURL(/\/templates\/[^/]+$/);
   await expect(page.getByText('Insurance certificate')).toBeVisible();
   await expect(page.getByText('Any new subcontractors?')).toBeVisible();
+  await expect(page.getByText('(optional)', { exact: true })).toBeVisible();
 
   // Publish. Draft-only controls (Edit links, Add-requirement form) must disappear.
   await page.click('button:has-text("Publish")');

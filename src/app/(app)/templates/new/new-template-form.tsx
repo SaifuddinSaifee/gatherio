@@ -18,6 +18,7 @@ import { TextField } from '@/components/ui/text-field';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { SegmentedButtons } from '@/components/ui/segmented-buttons';
+import { Switch } from '@/components/ui/switch';
 import { createTemplateWithRequirementsAction } from '../actions';
 
 type ActionType = 'upload' | 'answer' | 'acknowledge';
@@ -242,13 +243,16 @@ function RequirementRow({
       onDragEnd={onDragEnd}
       className={cn('transition-opacity duration-(--duration-effects-fast)', isDragging && 'opacity-40')}
     >
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Top row: reorder controls, title, and the remove action — the
+          remove button sits at the far right of this row, which is the
+          top-right corner of the card. */}
+      <div className="flex items-start gap-3">
         <MdDragIndicator
           aria-hidden="true"
-          className="h-5 w-5 shrink-0 cursor-grab text-md-on-surface-variant active:cursor-grabbing"
+          className="mt-4 h-5 w-5 shrink-0 cursor-grab text-md-on-surface-variant active:cursor-grabbing"
         />
 
-        <div className="flex flex-col">
+        <div className="mt-3.5 flex flex-col">
           <button
             type="button"
             onClick={onMoveUp}
@@ -269,7 +273,7 @@ function RequirementRow({
           </button>
         </div>
 
-        <div className="min-w-55 flex-1">
+        <div className="flex-1">
           <TextField
             label={`Requirement ${index + 1} title`}
             name="title"
@@ -281,31 +285,26 @@ function RequirementRow({
           />
         </div>
 
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove requirement ${index + 1}`}
+          className="mt-3.5 shrink-0 rounded-full p-1.5 text-md-on-surface-variant hover:text-md-error"
+        >
+          <MdClose aria-hidden="true" className="h-4.5 w-4.5" />
+        </button>
+      </div>
+
+      {/* Action type sits below the title, not beside it — the segmented
+          control needs room to breathe and competed with the title field
+          for width when they shared a row. */}
+      <div className="mt-3">
         <SegmentedButtons
           aria-label={`Requirement ${index + 1} action type`}
           options={ACTION_TYPE_OPTIONS}
           value={row.actionType}
           onChange={(actionType) => onChange({ actionType })}
         />
-
-        <label className="flex items-center gap-1.5 whitespace-nowrap text-body-small text-md-on-surface-variant">
-          <input
-            type="checkbox"
-            checked={row.required}
-            onChange={(e) => onChange({ required: e.target.checked })}
-            className="h-4 w-4 accent-md-primary"
-          />
-          Required
-        </label>
-
-        <Button
-          type="button"
-          variant="text"
-          onClick={onRemove}
-          aria-label={`Remove requirement ${index + 1}`}
-        >
-          <MdClose aria-hidden="true" className="h-4.5 w-4.5" />
-        </Button>
       </div>
 
       {row.actionType === 'answer' && (
@@ -325,46 +324,60 @@ function RequirementRow({
         </div>
       )}
 
-      {/* Instructions, acceptance criteria, and sensitivity are real but
-          secondary fields — tucked behind a disclosure so a fresh row
-          starts as one compact line, per explicit product feedback that
-          the all-fields-always-visible form felt heavy. */}
-      <details className="group mt-3">
-        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-body-small text-md-primary [&::-webkit-details-marker]:hidden">
-          <MdExpandMore
-            aria-hidden="true"
-            className="h-4.5 w-4.5 transition-transform duration-(--duration-effects-fast) group-open:rotate-180"
+      {/* Bottom row: "More options" (instructions, acceptance criteria,
+          sensitivity — real but secondary fields, tucked behind a
+          disclosure per explicit product feedback that an all-fields-
+          always-visible form felt heavy) on the left, Required switch on
+          the bottom right. */}
+      <div className="mt-4 flex items-start justify-between gap-4">
+        <details className="group min-w-0 flex-1">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-body-small text-md-primary [&::-webkit-details-marker]:hidden">
+            <MdExpandMore
+              aria-hidden="true"
+              className="h-4.5 w-4.5 transition-transform duration-(--duration-effects-fast) group-open:rotate-180"
+            />
+            More options
+          </summary>
+          <div className="mt-3 flex max-w-sm flex-col gap-3">
+            <TextField
+              label="Instructions (optional)"
+              id={`${row.key}-instructions`}
+              value={row.instructions}
+              onChange={(e) => onChange({ instructions: e.target.value })}
+            />
+            <TextField
+              label="Acceptance criteria (optional)"
+              id={`${row.key}-acceptanceCriteria`}
+              value={row.acceptanceCriteria}
+              onChange={(e) => onChange({ acceptanceCriteria: e.target.value })}
+            />
+            <Select
+              label="Sensitivity"
+              id={`${row.key}-sensitivity`}
+              value={row.sensitivity}
+              onChange={(e) => onChange({ sensitivity: e.target.value as Sensitivity })}
+              supportingText="Feeds the step-up authentication ladder later (not enforced yet) — leave as General unless this item is tax/identity, banking, or a high-value agreement."
+            >
+              <option value="general">General</option>
+              <option value="routine_business">Routine business</option>
+              <option value="tax_identity">Tax / identity</option>
+              <option value="banking">Banking</option>
+              <option value="high_value_agreement">High-value agreement</option>
+            </Select>
+          </div>
+        </details>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <span aria-hidden="true" className="text-body-small text-md-on-surface-variant">
+            Required
+          </span>
+          <Switch
+            checked={row.required}
+            onChange={(required) => onChange({ required })}
+            aria-label={`Requirement ${index + 1} required`}
           />
-          More options
-        </summary>
-        <div className="mt-3 flex flex-col gap-3">
-          <TextField
-            label="Instructions (optional)"
-            id={`${row.key}-instructions`}
-            value={row.instructions}
-            onChange={(e) => onChange({ instructions: e.target.value })}
-          />
-          <TextField
-            label="Acceptance criteria (optional)"
-            id={`${row.key}-acceptanceCriteria`}
-            value={row.acceptanceCriteria}
-            onChange={(e) => onChange({ acceptanceCriteria: e.target.value })}
-          />
-          <Select
-            label="Sensitivity"
-            id={`${row.key}-sensitivity`}
-            value={row.sensitivity}
-            onChange={(e) => onChange({ sensitivity: e.target.value as Sensitivity })}
-            supportingText="Feeds the step-up authentication ladder later (not enforced yet) — leave as General unless this item is tax/identity, banking, or a high-value agreement."
-          >
-            <option value="general">General</option>
-            <option value="routine_business">Routine business</option>
-            <option value="tax_identity">Tax / identity</option>
-            <option value="banking">Banking</option>
-            <option value="high_value_agreement">High-value agreement</option>
-          </Select>
         </div>
-      </details>
+      </div>
     </Card>
   );
 }
