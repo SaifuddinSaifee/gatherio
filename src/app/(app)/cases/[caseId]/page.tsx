@@ -1,4 +1,17 @@
 import { notFound } from 'next/navigation';
+import {
+  MdBusiness,
+  MdCancel,
+  MdCheckCircle,
+  MdEditNote,
+  MdLink,
+  MdMail,
+  MdPerson,
+  MdRemoveCircleOutline,
+  MdSchedule,
+  MdVisibility,
+} from 'react-icons/md';
+import type { IconType } from 'react-icons';
 import { getCurrentSession } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import { getCaseDetail } from '@/lib/domain/case';
@@ -13,6 +26,15 @@ const FULFILMENT_LABEL: Record<string, string> = {
   submitted: 'Submitted',
   waived: 'Waived',
   cancelled: 'Cancelled',
+};
+
+const FULFILMENT_ICON: Record<string, IconType> = {
+  pending: MdSchedule,
+  viewed: MdVisibility,
+  in_progress: MdEditNote,
+  submitted: MdCheckCircle,
+  waived: MdRemoveCircleOutline,
+  cancelled: MdCancel,
 };
 
 export default async function CaseDetailPage({
@@ -45,7 +67,10 @@ export default async function CaseDetailPage({
 
         {newToken && (
           <Card variant="outlined" className="mt-6 border-md-primary">
-            <p className="text-title-medium text-md-on-surface">Recipient link</p>
+            <p className="flex items-center gap-2 text-title-medium text-md-on-surface">
+              <MdLink aria-hidden="true" className="h-5 w-5 text-md-primary" />
+              Recipient link
+            </p>
             <p className="mt-1 text-body-small text-md-on-surface-variant">
               This link is shown once. Copy it now — Gather stores only a hash of the token, not
               the token itself, so it cannot be shown again.
@@ -58,29 +83,40 @@ export default async function CaseDetailPage({
 
         <h2 className="mt-8 text-title-medium text-md-on-surface">Recipient</h2>
         <Card className="mt-3">
-          <p className="text-body-medium text-md-on-surface">{detail.party?.displayName}</p>
+          <p className="flex items-center gap-2 text-body-medium text-md-on-surface">
+            <MdPerson aria-hidden="true" className="h-5 w-5 text-md-on-surface-variant" />
+            {detail.party?.displayName}
+          </p>
           {detail.party?.organizationName && (
-            <p className="text-body-small text-md-on-surface-variant">
+            <p className="mt-1 flex items-center gap-2 text-body-small text-md-on-surface-variant">
+              <MdBusiness aria-hidden="true" className="h-4.5 w-4.5" />
               {detail.party.organizationName}
             </p>
           )}
           {detail.party?.email && (
-            <p className="text-body-small text-md-on-surface-variant">{detail.party.email}</p>
+            <p className="mt-1 flex items-center gap-2 text-body-small text-md-on-surface-variant">
+              <MdMail aria-hidden="true" className="h-4.5 w-4.5" />
+              {detail.party.email}
+            </p>
           )}
         </Card>
 
         <h2 className="mt-8 text-title-medium text-md-on-surface">Requirements</h2>
         <ul className="mt-3 flex flex-col gap-3">
-          {detail.requirements.map(({ requirement, assignment }) => (
-            <li key={requirement.id}>
-              <Card className="flex items-center justify-between">
-                <p className="text-body-medium text-md-on-surface">{requirement.title}</p>
-                <span className="text-label-large text-md-on-surface-variant">
-                  {assignment ? FULFILMENT_LABEL[assignment.fulfilmentStatus] : '—'}
-                </span>
-              </Card>
-            </li>
-          ))}
+          {detail.requirements.map(({ requirement, assignment }) => {
+            const StatusIcon = assignment ? FULFILMENT_ICON[assignment.fulfilmentStatus] : null;
+            return (
+              <li key={requirement.id}>
+                <Card className="flex items-center justify-between">
+                  <p className="text-body-medium text-md-on-surface">{requirement.title}</p>
+                  <span className="flex items-center gap-1.5 text-label-large text-md-on-surface-variant">
+                    {StatusIcon && <StatusIcon aria-hidden="true" className="h-4.5 w-4.5" />}
+                    {assignment ? FULFILMENT_LABEL[assignment.fulfilmentStatus] : '—'}
+                  </span>
+                </Card>
+              </li>
+            );
+          })}
         </ul>
       </main>
     </>

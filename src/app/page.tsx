@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { MdLogin, MdPersonAdd } from 'react-icons/md';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Logo } from '@/components/ui/logo';
@@ -16,10 +17,16 @@ export default function HomePage() {
 
         <div className="mt-8 flex items-center justify-center gap-3">
           <Link href="/sign-up">
-            <Button variant="filled">Create your workspace</Button>
+            <Button variant="filled">
+              <MdPersonAdd aria-hidden="true" className="h-4.5 w-4.5" />
+              Create your workspace
+            </Button>
           </Link>
           <Link href="/sign-in">
-            <Button variant="text">Sign in</Button>
+            <Button variant="text">
+              <MdLogin aria-hidden="true" className="h-4.5 w-4.5" />
+              Sign in
+            </Button>
           </Link>
         </div>
       </Card>

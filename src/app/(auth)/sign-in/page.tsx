@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { MdError, MdLogin } from 'react-icons/md';
 import { Card } from '@/components/ui/card';
 import { TextField } from '@/components/ui/text-field';
 import { Button } from '@/components/ui/button';
@@ -19,8 +20,9 @@ export default async function SignInPage({
         {error && (
           <p
             role="alert"
-            className="mt-4 rounded-sm bg-md-error-container px-4 py-2 text-body-small text-md-on-error-container"
+            className="mt-4 flex items-center gap-2 rounded-sm bg-md-error-container px-4 py-2 text-body-small text-md-on-error-container"
           >
+            <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
             Error: {error}
           </p>
         )}
@@ -42,6 +44,7 @@ export default async function SignInPage({
           />
 
           <Button type="submit" variant="filled" fullWidth className="mt-2">
+            <MdLogin aria-hidden="true" className="h-4.5 w-4.5" />
             Sign in
           </Button>
         </form>

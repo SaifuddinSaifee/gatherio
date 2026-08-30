@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { MdChecklist, MdDescription, MdLogout } from 'react-icons/md';
 import { Logo } from '@/components/ui/logo';
 import { Button } from '@/components/ui/button';
 import { signOutAction } from '@/app/(app)/actions';
@@ -25,10 +26,18 @@ export function AppHeader({
             <Logo className="text-title-large" />
           </Link>
           <nav className="flex items-center gap-4 text-label-large">
-            <Link href="/dashboard" className="text-md-on-surface-variant hover:text-md-on-surface">
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-1.5 text-md-on-surface-variant hover:text-md-on-surface"
+            >
+              <MdChecklist aria-hidden="true" className="h-4.5 w-4.5" />
               Cases
             </Link>
-            <Link href="/templates" className="text-md-on-surface-variant hover:text-md-on-surface">
+            <Link
+              href="/templates"
+              className="flex items-center gap-1.5 text-md-on-surface-variant hover:text-md-on-surface"
+            >
+              <MdDescription aria-hidden="true" className="h-4.5 w-4.5" />
               Templates
             </Link>
           </nav>
@@ -41,6 +50,7 @@ export function AppHeader({
           </span>
           <form action={signOutAction}>
             <Button type="submit" variant="text">
+              <MdLogout aria-hidden="true" className="h-4.5 w-4.5" />
               Sign out
             </Button>
           </form>

@@ -1,3 +1,4 @@
+import { MdAdd, MdError } from 'react-icons/md';
 import { getCurrentSession } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import { AppHeader } from '@/components/app-header';
@@ -31,8 +32,9 @@ export default async function NewTemplatePage({
           {error && (
             <p
               role="alert"
-              className="mt-4 rounded-sm bg-md-error-container px-4 py-2 text-body-small text-md-on-error-container"
+              className="mt-4 flex items-center gap-2 rounded-sm bg-md-error-container px-4 py-2 text-body-small text-md-on-error-container"
             >
+              <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
               Error: {error}
             </p>
           )}
@@ -45,6 +47,7 @@ export default async function NewTemplatePage({
               required
             />
             <Button type="submit" variant="filled" fullWidth className="mt-2">
+              <MdAdd aria-hidden="true" className="h-4.5 w-4.5" />
               Create template
             </Button>
           </form>

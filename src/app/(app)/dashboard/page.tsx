@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { MdAdd, MdCheckCircle, MdFolderOpen } from 'react-icons/md';
 import { getCurrentSession } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import { listCases } from '@/lib/domain/case';
@@ -22,12 +23,16 @@ export default async function DashboardPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-headline-small font-medium text-md-on-surface">Cases</h1>
           <Link href="/cases/new">
-            <Button variant="filled">New case</Button>
+            <Button variant="filled">
+              <MdAdd aria-hidden="true" className="h-4.5 w-4.5" />
+              New case
+            </Button>
           </Link>
         </div>
 
         {cases.length === 0 ? (
-          <Card className="mt-8">
+          <Card className="mt-8 flex items-center gap-3">
+            <MdFolderOpen aria-hidden="true" className="h-6 w-6 shrink-0 text-md-on-surface-variant" />
             <p className="text-body-medium text-md-on-surface-variant">
               No cases yet. Publish a template, then create a case from it.
             </p>
@@ -45,7 +50,10 @@ export default async function DashboardPage() {
                           {templateName} · {party?.displayName ?? 'No recipient'}
                         </p>
                       </div>
-                      <span className="text-label-large text-md-on-surface-variant">
+                      <span className="flex items-center gap-1.5 text-label-large text-md-on-surface-variant">
+                        {caseRow.completedAt ? (
+                          <MdCheckCircle aria-hidden="true" className="h-4.5 w-4.5 text-md-primary" />
+                        ) : null}
                         {caseRow.completedAt
                           ? 'Complete'
                           : `${submittedRequirements} of ${totalRequirements} submitted`}

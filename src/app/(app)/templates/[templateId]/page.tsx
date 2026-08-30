@@ -1,5 +1,20 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import {
+  MdAdd,
+  MdArchive,
+  MdArrowBack,
+  MdCheckCircle,
+  MdContentCopy,
+  MdEdit,
+  MdEditNote,
+  MdError,
+  MdPublish,
+  MdTaskAlt,
+  MdUnarchive,
+  MdUpload,
+} from 'react-icons/md';
+import type { IconType } from 'react-icons';
 import { getCurrentSession } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import { getTemplate, getLatestVersion, listRequirementDefinitions } from '@/lib/domain/template';
@@ -19,6 +34,18 @@ const ACTION_TYPE_LABEL: Record<string, string> = {
   upload: 'Upload',
   answer: 'Answer',
   acknowledge: 'Acknowledge',
+};
+
+const ACTION_TYPE_ICON: Record<string, IconType> = {
+  upload: MdUpload,
+  answer: MdEditNote,
+  acknowledge: MdTaskAlt,
+};
+
+const VERSION_STATUS_ICON: Record<string, IconType> = {
+  draft: MdEditNote,
+  active: MdCheckCircle,
+  archived: MdArchive,
 };
 
 export default async function TemplateDetailPage({
@@ -48,8 +75,12 @@ export default async function TemplateDetailPage({
     <>
       <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} />
       <main className="mx-auto max-w-3xl px-6 py-12">
-        <Link href="/templates" className="text-body-small text-md-primary hover:underline">
-          ← Templates
+        <Link
+          href="/templates"
+          className="flex items-center gap-1 text-body-small text-md-primary hover:underline"
+        >
+          <MdArrowBack aria-hidden="true" className="h-4.5 w-4.5" />
+          Templates
         </Link>
 
         <div className="mt-2 flex items-center justify-between">
@@ -58,6 +89,11 @@ export default async function TemplateDetailPage({
             <input type="hidden" name="templateId" value={template.id} />
             <input type="hidden" name="archived" value={template.archivedAt ? 'false' : 'true'} />
             <Button type="submit" variant="text">
+              {template.archivedAt ? (
+                <MdUnarchive aria-hidden="true" className="h-4.5 w-4.5" />
+              ) : (
+                <MdArchive aria-hidden="true" className="h-4.5 w-4.5" />
+              )}
               {template.archivedAt ? 'Unarchive' : 'Archive'}
             </Button>
           </form>
@@ -66,29 +102,37 @@ export default async function TemplateDetailPage({
         {error && (
           <p
             role="alert"
-            className="mt-4 rounded-sm bg-md-error-container px-4 py-2 text-body-small text-md-on-error-container"
+            className="mt-4 flex items-center gap-2 rounded-sm bg-md-error-container px-4 py-2 text-body-small text-md-on-error-container"
           >
+            <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
             Error: {error}
           </p>
         )}
 
         {version ? (
           <Card className="mt-6 flex items-center justify-between">
-            <p className="text-body-medium text-md-on-surface">
-              Version {version.version} —{' '}
-              <span className="font-medium">
-                {version.status === 'draft'
-                  ? 'Draft'
-                  : version.status === 'active'
-                    ? 'Published'
-                    : 'Archived'}
-              </span>
-            </p>
+            <div className="flex items-center gap-2">
+              {(() => {
+                const VersionIcon = VERSION_STATUS_ICON[version.status] ?? MdEditNote;
+                return <VersionIcon aria-hidden="true" className="h-5 w-5 text-md-on-surface-variant" />;
+              })()}
+              <p className="text-body-medium text-md-on-surface">
+                Version {version.version} —{' '}
+                <span className="font-medium">
+                  {version.status === 'draft'
+                    ? 'Draft'
+                    : version.status === 'active'
+                      ? 'Published'
+                      : 'Archived'}
+                </span>
+              </p>
+            </div>
             {isDraft ? (
               <form action={publishVersionAction}>
                 <input type="hidden" name="templateId" value={template.id} />
                 <input type="hidden" name="versionId" value={version.id} />
                 <Button type="submit" variant="filled">
+                  <MdPublish aria-hidden="true" className="h-4.5 w-4.5" />
                   Publish
                 </Button>
               </form>
@@ -96,6 +140,7 @@ export default async function TemplateDetailPage({
               <form action={createDraftVersionAction}>
                 <input type="hidden" name="templateId" value={template.id} />
                 <Button type="submit" variant="outlined">
+                  <MdContentCopy aria-hidden="true" className="h-4.5 w-4.5" />
                   Create new draft version
                 </Button>
               </form>
@@ -109,32 +154,46 @@ export default async function TemplateDetailPage({
           <p className="mt-2 text-body-medium text-md-on-surface-variant">No requirements yet.</p>
         ) : (
           <ul className="mt-4 flex flex-col gap-3">
-            {definitions.map((d) => (
-              <li key={d.id}>
-                <Card className="flex items-center justify-between">
-                  <div>
-                    <p className="text-title-medium text-md-on-surface">
-                      {d.title}
-                      {!d.required && (
-                        <span className="ml-2 text-label-small text-md-on-surface-variant">
-                          (optional)
-                        </span>
-                      )}
-                    </p>
-                    <p className="mt-1 text-body-small text-md-on-surface-variant">
-                      {ACTION_TYPE_LABEL[d.actionType]}
-                      {d.actionType === 'answer' && d.answerFieldType ? ` · ${d.answerFieldType}` : ''}
-                      {d.sensitivity !== 'general' ? ` · ${d.sensitivity.replace('_', ' ')}` : ''}
-                    </p>
-                  </div>
-                  {isDraft && (
-                    <Link href={`/templates/${template.id}/requirements/${d.id}/edit`}>
-                      <Button variant="text">Edit</Button>
-                    </Link>
-                  )}
-                </Card>
-              </li>
-            ))}
+            {definitions.map((d) => {
+              const ActionIcon = ACTION_TYPE_ICON[d.actionType] ?? MdTaskAlt;
+              return (
+                <li key={d.id}>
+                  <Card className="flex items-center justify-between">
+                    <div className="flex items-start gap-3">
+                      <ActionIcon
+                        aria-hidden="true"
+                        className="mt-0.5 h-5 w-5 shrink-0 text-md-on-surface-variant"
+                      />
+                      <div>
+                        <p className="text-title-medium text-md-on-surface">
+                          {d.title}
+                          {!d.required && (
+                            <span className="ml-2 text-label-small text-md-on-surface-variant">
+                              (optional)
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-1 text-body-small text-md-on-surface-variant">
+                          {ACTION_TYPE_LABEL[d.actionType]}
+                          {d.actionType === 'answer' && d.answerFieldType
+                            ? ` · ${d.answerFieldType}`
+                            : ''}
+                          {d.sensitivity !== 'general' ? ` · ${d.sensitivity.replace('_', ' ')}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    {isDraft && (
+                      <Link href={`/templates/${template.id}/requirements/${d.id}/edit`}>
+                        <Button variant="text">
+                          <MdEdit aria-hidden="true" className="h-4.5 w-4.5" />
+                          Edit
+                        </Button>
+                      </Link>
+                    )}
+                  </Card>
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -186,6 +245,7 @@ export default async function TemplateDetailPage({
                 Required
               </label>
               <Button type="submit" variant="filled" className="mt-2">
+                <MdAdd aria-hidden="true" className="h-4.5 w-4.5" />
                 Add requirement
               </Button>
             </form>

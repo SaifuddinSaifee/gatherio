@@ -8,7 +8,7 @@ just written. `[~]` means partially done; the note says what's missing.
 
 Legend: `[ ]` not started · `[~]` in progress / partial · `[x]` done & verified
 
-Last updated: 2026-08-30 (Stage 5 — templates and cases — built and verified end-to-end, including a real Playwright test of the stage's one non-negotiable: editing a template after a case exists does not alter that case)
+Last updated: 2026-08-30 (Material Icons via `react-icons/md` added across every existing page — nav, buttons, status/action-type indicators, error banners — verified with the full typecheck/lint/vitest/build/Playwright gate)
 
 ---
 
@@ -205,10 +205,10 @@ Last updated: 2026-08-30 (Stage 5 — templates and cases — built and verified
 - [x] `TextField` ([text-field.tsx](src/components/ui/text-field.tsx)) — top-corner radius corrected to `rounded-t-xs` (4px, the canonical M3 filled-field shape; the old doc's 12px was an arbitrary guess). Added `errorMessage`/`supportingText` props, `aria-invalid` + `aria-describedby` programmatic association, and a text-prefixed error message so color isn't the sole indicator.
 - [x] `cn()` helper added ([lib/cn.ts](src/lib/cn.ts), `clsx` + `tailwind-merge` v3) — **caught a real bug** while wiring `Card` into the sign-up page: a component's own default (`p-6`) and a caller's override (`p-8`) were both landing in the class string with no defined winner, since plain string concatenation can't resolve conflicting Tailwind utilities. All three primitives now merge classes through `cn()` instead of raw template strings.
 - [ ] `Chip`, `StatusPill`, `FAB` — still unbuilt, add when a real consumer needs them.
+- [x] Icons — `react-icons/md` (Google Material Symbols/Icons, matching §79's "coherent Material-oriented icon family") added 2026-08-30 across every page built so far: `AppHeader` nav + sign-out, all primary/destructive buttons (add/create/publish/archive/edit/delete/save/send/sign-in/sign-up), action-type icons on requirement rows (upload/answer/acknowledge), version-status icons (draft/published/archived), fulfilment-status icons on the case detail page (pending/viewed/in-progress/submitted/waived/cancelled), and every error banner (`MdError`). Sized `h-4.5 w-4.5` (18px, inline with button/label text) or `h-5 w-5`/`h-6 w-6` (20-24px, standalone section/empty-state icons), per §61/§79's "visible icon size ≠ interaction target size" and the 18/20/24px guidance. Every icon paired with visible text is `aria-hidden="true"` — the text remains the accessible name and the sole thing screen readers announce, so icons are reinforcement, never the only indicator (§72, §75).
 
 **Known partial gaps in the rebuilt primitives** (real, not hidden — see also "Known gaps" below):
 - [~] `TextField` label sits statically above the field rather than animating as a true floating label (part of §38's anatomy, not implemented).
-- [~] Logo — spec is fully in `design-revised.md` §15 now (supersedes the `design.md` version), matches what was already built in `page.tsx` (GATHER, Saira Extra Condensed Bold, Primary color, `-0.01em` tracking). Still not extracted into a shared `Logo` component — only one consumer exists so far.
 
 **Marketing/product distinction (§81, §62) applied:** no atmospheric blur/gradient/glassmorphism/hover-lift decoration has been added anywhere — correctly, since nothing built so far is a marketing/hero surface. The recipient page's planned restraint (skip heavy decoration, render fast on a weak connection) turns out to already be the new doc's default for *all* product UI, not a special-cased exception.
 

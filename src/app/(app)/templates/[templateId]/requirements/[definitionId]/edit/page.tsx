@@ -1,4 +1,5 @@
 import { notFound, redirect } from 'next/navigation';
+import { MdDelete, MdError, MdSave } from 'react-icons/md';
 import { getCurrentSession } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import { getRequirementDefinition, getVersion } from '@/lib/domain/template';
@@ -44,8 +45,9 @@ export default async function EditRequirementDefinitionPage({
           {error && (
             <p
               role="alert"
-              className="mt-4 rounded-sm bg-md-error-container px-4 py-2 text-body-small text-md-on-error-container"
+              className="mt-4 flex items-center gap-2 rounded-sm bg-md-error-container px-4 py-2 text-body-small text-md-on-error-container"
             >
+              <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
               Error: {error}
             </p>
           )}
@@ -99,6 +101,7 @@ export default async function EditRequirementDefinitionPage({
               Required
             </label>
             <Button type="submit" variant="filled" className="mt-2">
+              <MdSave aria-hidden="true" className="h-4.5 w-4.5" />
               Save changes
             </Button>
           </form>
@@ -108,6 +111,7 @@ export default async function EditRequirementDefinitionPage({
             <input type="hidden" name="versionId" value={version.id} />
             <input type="hidden" name="definitionId" value={definition.id} />
             <Button type="submit" variant="text" fullWidth className="text-md-error">
+              <MdDelete aria-hidden="true" className="h-4.5 w-4.5" />
               Delete requirement
             </Button>
           </form>
