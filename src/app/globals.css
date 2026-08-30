@@ -1,0 +1,50 @@
+@import 'tailwindcss';
+
+/*
+ * Material You (MD3) tokens, per design.md — purple/violet seed (#6750A4).
+ * Centralized here as the single source; components consume via the
+ * `md-` prefixed Tailwind utilities Tailwind v4 generates from `@theme`.
+ * Never introduce a one-off hex value in a component — extend this file.
+ */
+@theme {
+  --color-md-background: #fffbfe;
+  --color-md-on-background: #1c1b1f;
+  --color-md-primary: #6750a4;
+  --color-md-on-primary: #ffffff;
+  --color-md-secondary-container: #e8def8;
+  --color-md-on-secondary-container: #1d192b;
+  --color-md-tertiary: #7d5260;
+  --color-md-surface-container: #f3edf7;
+  --color-md-surface-container-low: #e7e0ec;
+  --color-md-outline: #79747e;
+  --color-md-on-surface-variant: #49454f;
+
+  --font-sans: 'Roboto', ui-sans-serif, system-ui, sans-serif;
+
+  /* MD3's signature "Emphasized Decelerate" easing (design.md §Animation). */
+  --ease-md-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --radius-md-xs: 8px;
+  --radius-md-sm: 12px;
+  --radius-md-md: 16px;
+  --radius-md-lg: 24px;
+  --radius-md-xl: 28px;
+  --radius-md-2xl: 32px;
+  --radius-md-3xl: 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+body {
+  background-color: var(--color-md-background);
+  color: var(--color-md-on-background);
+}

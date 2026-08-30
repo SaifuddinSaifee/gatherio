@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gatherio-postgres
+    environment:
+      POSTGRES_USER: gatherio
+      POSTGRES_PASSWORD: gatherio
+      POSTGRES_DB: gatherio
+    ports:
+      - '5433:5432'
+    volumes:
+      - gatherio-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gatherio -d gatherio']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Local email sink. SMTP on 1025, web UI on 8025.
+  # The notify adapter points here in development so reminder copy is
+  # inspectable without sending real mail.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: gatherio-mailpit
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+volumes:
+  gatherio-pgdata:
