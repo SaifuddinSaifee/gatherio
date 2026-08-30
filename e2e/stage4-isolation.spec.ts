@@ -22,7 +22,7 @@ test('a second user cannot resolve the first user\'s workspace', async () => {
   await pageA.fill('#workspaceName', 'Workspace A Only');
   await pageA.click('button[type=submit]');
   await pageA.waitForURL('**/dashboard');
-  await expect(pageA.locator('h1')).toHaveText('Workspace A Only');
+  await expect(pageA.getByTestId('workspace-name')).toHaveText('Workspace A Only · owner');
 
   await pageB.goto('http://localhost:3000/sign-up');
   await pageB.fill('#name', 'User B');
@@ -31,8 +31,8 @@ test('a second user cannot resolve the first user\'s workspace', async () => {
   await pageB.fill('#workspaceName', 'Workspace B Only');
   await pageB.click('button[type=submit]');
   await pageB.waitForURL('**/dashboard');
-  await expect(pageB.locator('h1')).toHaveText('Workspace B Only');
-  await expect(pageB.locator('h1')).not.toHaveText('Workspace A Only');
+  await expect(pageB.getByTestId('workspace-name')).toHaveText('Workspace B Only · owner');
+  await expect(pageB.getByTestId('workspace-name')).not.toHaveText('Workspace A Only · owner');
 
   await browserA.close();
   await browserB.close();

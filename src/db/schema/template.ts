@@ -8,6 +8,8 @@ export const workflowTemplate = pgTable('workflow_template', {
     .notNull()
     .references(() => workspace.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
+  /** Archived templates stay for case history but drop out of the picker when instantiating a new case. */
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

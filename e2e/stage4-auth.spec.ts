@@ -20,8 +20,8 @@ test('sign-up, route protection, sign-in, sign-out, and wrong-password all work'
   await page.click('button[type=submit]');
 
   await page.waitForURL('**/dashboard');
-  await expect(page.locator('h1')).toHaveText('E2E Test Workspace');
-  await expect(page.getByText('Signed in as owner.')).toBeVisible();
+  await expect(page.locator('h1')).toHaveText('Cases');
+  await expect(page.getByTestId('workspace-name')).toHaveText('E2E Test Workspace · owner');
 
   await page.click('button:has-text("Sign out")');
   await page.waitForURL('**/sign-in');

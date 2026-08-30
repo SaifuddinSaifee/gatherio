@@ -43,7 +43,7 @@ The risk is commercial rather than legal: accounting practices holding client ta
 
 Local toolchain verified present: Node 22.21, pnpm 11.24, Docker 29.1, psql 16.10.
 
-**Status: Stages 1–3 built and verified** (schema migrated/seeded, tenant-isolation lint rule confirmed firing, storage/notify/scan adapters tested including a real HTTP upload/download round-trip). Tracked in detail in `CHECKLIST.md` at the repo root. This plan file is now being extended for Stage 4.
+**Status: Stages 1–5 built and verified.** Tracked in detail in `CHECKLIST.md` at the repo root.
 
 ---
 
@@ -179,11 +179,21 @@ Not a single cross-library transaction — Better Auth's own user-creation commi
 
 ## Stage 5 — Templates and cases
 
-Template CRUD with versioning (`template_version` is immutable once a case references it). Requirement definitions carry `action_type` of `upload | answer | acknowledge` (`sign` deferred), plus title, instructions, required flag, sequence, acceptance criteria.
+**Built and verified.** Full details in `CHECKLIST.md`'s Stage 5 section; summary below.
 
-Instantiating a case snapshots the template version into concrete `requirement` + `assignment` rows, creates the `party`, and issues an `access_token`.
+Template CRUD with versioning, where immutability is enforced by construction rather than by checking for existing case references at edit time: a `templateVersion` starts `draft` (freely mutable), `publishVersion` flips it to `active`, and every requirement-definition mutation asserts `status === 'draft'` — so a published version simply cannot be edited in place, and a case can only ever be instantiated from an `active` version. "Editing" a published template is an explicit user action (`createDraftFromLatest` clones the latest version's requirement definitions into a brand-new draft with fresh ids), never an implicit auto-clone-on-edit-attempt — that alternative was considered and rejected because it leaves real ambiguity about which definition in the clone the user meant to edit.
+
+Requirement definitions carry `action_type` of `upload | answer | acknowledge` (`sign` deferred), plus title, instructions, required flag, sequence, acceptance criteria, and sensitivity — built via a new `Select` primitive matching `TextField`'s visual language.
+
+Instantiating a case snapshots the template version into concrete `requirement` + `assignment` rows, creates the `party`, and issues an `access_token` — deliberately single-party per case even though the schema already supports multi-party, since product.md's own Phase 1a list scopes multi-party assignment to Phase 1b.
 
 **Answer field types — exactly five** (§4.1): short text, long text, date, choice, yes/no. Not a form builder.
+
+The case list (replacing the Stage 4 dashboard stub) and case detail page are genuinely data-backed but deliberately minimal — no "what's blocking this case" computation yet, since that's explicitly Stage 9's job.
+
+Verified two ways: the domain layer's own invariant (mutation functions throw on a non-draft version) and a full Playwright journey (`e2e/stage5-templates-cases.spec.ts`) that creates a template, publishes it, creates a case, *then* edits a new draft version of the template and confirms the already-created case is completely unaffected — the actual Stage 5 non-negotiable, exercised end-to-end.
+
+Also: extracted the GATHER wordmark into a shared `Logo` component and added an `AppHeader` nav shell, since Stage 5 is the point this app first has more than one page to navigate between; gave `requireRole` (built but unused since Stage 4) its first real call sites (archiving a template and publishing a version are owner-only).
 
 ## Stage 6 — Magic links and the recipient page
 
@@ -224,13 +234,13 @@ ZIP export of a complete packet, generated in the worker, delivered via a short-
 
 ## Stage 10 — Design system
 
-Material You per design.md, tokens centralized in `src/app/globals.css` under Tailwind v4 `@theme` with the `md-` prefix the doc uses (`--color-md-primary: #6750A4` etc.). Roboto 400/500/700.
+**Superseded mid-build.** This section originally specified the design system from `design.md`. A revised, substantially more rigorous spec — `design-revised.md` — now supersedes it as the source of truth for all UI work; `design.md` is kept only for historical reference. `design-revised.md` explicitly corrects several things `design.md` said to do: state-layer overlays instead of background-alpha hover states (`bg-primary/90`), no `active:scale-95` (too aggressive — omit scale or use 0.98–0.99), no `transition-all`/blanket 300ms (explicit `transition-property` lists, split spatial/effects motion timing), a real semantic Error color family (Tertiary was being used as a stand-in), and "medium" (12px) as the standard-card radius for product UI rather than 24px (24px+ is reserved for marketing/hero surfaces).
 
-Component primitives in `src/components/ui/`: `Button` (all `rounded-full`, state-layer opacity for hover/active, `active:scale-95`), `Card` (surface-container background, 24px radius, `shadow-sm`→`shadow-md` on hover), `TextField` (filled style — rounded top, square bottom, 2px bottom border going primary on focus), `Chip`, `StatusPill`, `FAB`.
+The token foundation and primitives were rebuilt against `design-revised.md` once this was caught (see `CHECKLIST.md`'s Stage 10 section for the full audit and what changed). Current state: `globals.css` carries the full required color-role families (primary/secondary/tertiary/error containers, full surface-container hierarchy, outline-variant, scrim, shadow, inverse-*), a named Material type scale (`text-display-large` … `text-label-small`), real elevation-level shadow tokens (`shadow-elevation-0`–`5`, not raw Tailwind `shadow-sm`/`md`), spatial/effects motion duration tokens, and state-layer opacity tokens. Dark theme is intentionally scoped out for now (an explicitly allowed option per the new doc's final checklist) — revisit when a real need appears.
 
-Signature elements that must be present: organic blur shapes with `blur-3xl` in hero and key sections, the tonal surface system with no pure white anywhere, large radii (24px cards, 32–48px major containers), `cubic-bezier(0.2,0,0,1)` easing, focus rings on everything interactive, and `prefers-reduced-motion` honoured.
+Component primitives in `src/components/ui/`: `Button` (filled/tonal/outlined/text, real state-layer overlay, no scale feedback), `Card` (filled/outlined, medium radius, non-interactive by construction), `TextField` (filled style, corrected 4px top-corner radius, error state with text-based indicator + `aria-describedby`, not color-only). `cn()` (`clsx` + `tailwind-merge`) added in `src/lib/cn.ts` so component-default classes and caller overrides resolve correctly instead of both landing in the class list unresolved. `Chip`, `StatusPill`, `FAB` remain unbuilt — add when a real consumer needs them.
 
-One deliberate restraint: the recipient page uses the tonal system and pill buttons but skips the heavier atmospheric layering. It has to render fast on a weak connection, and that constraint outranks decoration.
+Any atmospheric/decorative techniques (blur shapes, radial gradients, glassmorphism, hover lift, image zoom) are now explicitly scoped to marketing/hero/onboarding surfaces only (`design-revised.md` §62), not applied to dense product UI — the recipient page's existing restraint (skip heavy decoration, render fast on a weak connection) was already directionally correct under the new doc, not just a performance-driven exception to the old one.
 
 ---
 

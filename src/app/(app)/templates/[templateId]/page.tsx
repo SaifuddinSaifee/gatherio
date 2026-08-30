@@ -1,0 +1,201 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { getCurrentSession } from '@/db/session';
+import { getWorkspaceById } from '@/db/workspace';
+import { getTemplate, getLatestVersion, listRequirementDefinitions } from '@/lib/domain/template';
+import { AppHeader } from '@/components/app-header';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { TextField } from '@/components/ui/text-field';
+import { Select } from '@/components/ui/select';
+import {
+  setTemplateArchivedAction,
+  publishVersionAction,
+  createDraftVersionAction,
+  addRequirementDefinitionAction,
+} from '../actions';
+
+const ACTION_TYPE_LABEL: Record<string, string> = {
+  upload: 'Upload',
+  answer: 'Answer',
+  acknowledge: 'Acknowledge',
+};
+
+export default async function TemplateDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ templateId: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const session = await getCurrentSession();
+  if (!session) return null;
+
+  const { templateId } = await params;
+  const { error } = await searchParams;
+
+  const template = await getTemplate(session.workspaceId, templateId);
+  if (!template) notFound();
+
+  const [workspace, version] = await Promise.all([
+    getWorkspaceById(session.workspaceId),
+    getLatestVersion(session.workspaceId, templateId),
+  ]);
+  const definitions = version ? await listRequirementDefinitions(session.workspaceId, version.id) : [];
+  const isDraft = version?.status === 'draft';
+
+  return (
+    <>
+      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} />
+      <main className="mx-auto max-w-3xl px-6 py-12">
+        <Link href="/templates" className="text-body-small text-md-primary hover:underline">
+          ← Templates
+        </Link>
+
+        <div className="mt-2 flex items-center justify-between">
+          <h1 className="text-headline-small font-medium text-md-on-surface">{template.name}</h1>
+          <form action={setTemplateArchivedAction}>
+            <input type="hidden" name="templateId" value={template.id} />
+            <input type="hidden" name="archived" value={template.archivedAt ? 'false' : 'true'} />
+            <Button type="submit" variant="text">
+              {template.archivedAt ? 'Unarchive' : 'Archive'}
+            </Button>
+          </form>
+        </div>
+
+        {error && (
+          <p
+            role="alert"
+            className="mt-4 rounded-sm bg-md-error-container px-4 py-2 text-body-small text-md-on-error-container"
+          >
+            Error: {error}
+          </p>
+        )}
+
+        {version ? (
+          <Card className="mt-6 flex items-center justify-between">
+            <p className="text-body-medium text-md-on-surface">
+              Version {version.version} —{' '}
+              <span className="font-medium">
+                {version.status === 'draft'
+                  ? 'Draft'
+                  : version.status === 'active'
+                    ? 'Published'
+                    : 'Archived'}
+              </span>
+            </p>
+            {isDraft ? (
+              <form action={publishVersionAction}>
+                <input type="hidden" name="templateId" value={template.id} />
+                <input type="hidden" name="versionId" value={version.id} />
+                <Button type="submit" variant="filled">
+                  Publish
+                </Button>
+              </form>
+            ) : (
+              <form action={createDraftVersionAction}>
+                <input type="hidden" name="templateId" value={template.id} />
+                <Button type="submit" variant="outlined">
+                  Create new draft version
+                </Button>
+              </form>
+            )}
+          </Card>
+        ) : null}
+
+        <h2 className="mt-8 text-title-medium text-md-on-surface">Requirements</h2>
+
+        {definitions.length === 0 ? (
+          <p className="mt-2 text-body-medium text-md-on-surface-variant">No requirements yet.</p>
+        ) : (
+          <ul className="mt-4 flex flex-col gap-3">
+            {definitions.map((d) => (
+              <li key={d.id}>
+                <Card className="flex items-center justify-between">
+                  <div>
+                    <p className="text-title-medium text-md-on-surface">
+                      {d.title}
+                      {!d.required && (
+                        <span className="ml-2 text-label-small text-md-on-surface-variant">
+                          (optional)
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-1 text-body-small text-md-on-surface-variant">
+                      {ACTION_TYPE_LABEL[d.actionType]}
+                      {d.actionType === 'answer' && d.answerFieldType ? ` · ${d.answerFieldType}` : ''}
+                      {d.sensitivity !== 'general' ? ` · ${d.sensitivity.replace('_', ' ')}` : ''}
+                    </p>
+                  </div>
+                  {isDraft && (
+                    <Link href={`/templates/${template.id}/requirements/${d.id}/edit`}>
+                      <Button variant="text">Edit</Button>
+                    </Link>
+                  )}
+                </Card>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {isDraft ? (
+          <Card className="mt-6">
+            <h3 className="text-title-medium text-md-on-surface">Add a requirement</h3>
+            <form action={addRequirementDefinitionAction} className="mt-4 flex flex-col gap-4">
+              <input type="hidden" name="templateId" value={template.id} />
+              <input type="hidden" name="versionId" value={version!.id} />
+              <TextField label="Title" name="title" required />
+              <TextField label="Instructions (optional)" name="instructions" />
+              <Select label="Action type" name="actionType" defaultValue="upload">
+                <option value="upload">Upload</option>
+                <option value="answer">Answer</option>
+                <option value="acknowledge">Acknowledge</option>
+              </Select>
+              <Select
+                label="Answer type (only used when action type is Answer)"
+                name="answerFieldType"
+                defaultValue="short_text"
+              >
+                <option value="short_text">Short text</option>
+                <option value="long_text">Long text</option>
+                <option value="date">Date</option>
+                <option value="choice">Choice</option>
+                <option value="yes_no">Yes/No</option>
+              </Select>
+              <Select label="Sensitivity" name="sensitivity" defaultValue="general">
+                <option value="general">General</option>
+                <option value="routine_business">Routine business</option>
+                <option value="tax_identity">Tax / identity</option>
+                <option value="banking">Banking</option>
+                <option value="high_value_agreement">High-value agreement</option>
+              </Select>
+              <TextField
+                label="Sequence"
+                name="sequence"
+                type="number"
+                defaultValue={definitions.length}
+              />
+              <TextField label="Acceptance criteria (optional)" name="acceptanceCriteria" />
+              <label className="flex items-center gap-2 text-body-medium text-md-on-surface">
+                <input
+                  type="checkbox"
+                  name="required"
+                  defaultChecked
+                  className="h-4 w-4 accent-md-primary"
+                />
+                Required
+              </label>
+              <Button type="submit" variant="filled" className="mt-2">
+                Add requirement
+              </Button>
+            </form>
+          </Card>
+        ) : (
+          <p className="mt-6 text-body-small text-md-on-surface-variant">
+            This version is published and immutable. Create a new draft version to make changes.
+          </p>
+        )}
+      </main>
+    </>
+  );
+}
