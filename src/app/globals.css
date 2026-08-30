@@ -1,36 +1,195 @@
 @import 'tailwindcss';
 
 /*
- * Material You (MD3) tokens, per design.md — purple/violet seed (#6750A4).
- * Centralized here as the single source; components consume via the
- * `md-` prefixed Tailwind utilities Tailwind v4 generates from `@theme`.
+ * Gather design tokens — per design-revised.md (supersedes the earlier
+ * design.md; see CHECKLIST.md's Stage 10 section for the audit that
+ * prompted this rewrite). Purple/violet seed #6750A4, the classic
+ * Material 3 reference palette.
+ *
+ * Dark theme is intentionally scoped out for now (design-revised.md's
+ * final checklist explicitly allows "exists or is intentionally scoped
+ * out") — revisit when a real need appears, generating a proper dark
+ * scheme from this seed rather than inverting these values.
+ *
  * Never introduce a one-off hex value in a component — extend this file.
  */
 @theme {
-  --color-md-background: #fffbfe;
-  --color-md-on-background: #1c1b1f;
+  /* ---- Color: Primary --------------------------------------------- */
   --color-md-primary: #6750a4;
   --color-md-on-primary: #ffffff;
+  --color-md-primary-container: #eaddff;
+  --color-md-on-primary-container: #21005d;
+  --color-md-inverse-primary: #d0bcff;
+
+  /* ---- Color: Secondary -------------------------------------------- */
+  --color-md-secondary: #625b71;
+  --color-md-on-secondary: #ffffff;
   --color-md-secondary-container: #e8def8;
   --color-md-on-secondary-container: #1d192b;
-  --color-md-tertiary: #7d5260;
-  --color-md-surface-container: #f3edf7;
-  --color-md-surface-container-low: #e7e0ec;
-  --color-md-outline: #79747e;
-  --color-md-on-surface-variant: #49454f;
 
+  /* ---- Color: Tertiary ----------------------------------------------- */
+  --color-md-tertiary: #7d5260;
+  --color-md-on-tertiary: #ffffff;
+  --color-md-tertiary-container: #ffd8e4;
+  --color-md-on-tertiary-container: #31111d;
+
+  /* ---- Color: Error --------------------------------------------------
+   * Was missing entirely before this rewrite — error states had been
+   * (incorrectly) rendered in Tertiary, which design-revised.md §8/§82
+   * names directly as an anti-pattern. Every error/destructive UI must
+   * use this family instead. */
+  --color-md-error: #b3261e;
+  --color-md-on-error: #ffffff;
+  --color-md-error-container: #f9dedc;
+  --color-md-on-error-container: #410e0b;
+
+  /* ---- Color: Surface ------------------------------------------------
+   * Full container hierarchy (lowest → highest) per §7's surface
+   * philosophy — depth comes from tone, not from defaulting everything
+   * to one lavender background. surface-dim/surface-bright and
+   * scrim/shadow aren't enumerated with hex values in design-revised.md
+   * §5's table; these four come from the published M3 baseline scheme
+   * for this exact seed (#6750A4 is Google's own reference/example seed),
+   * not invented values. */
+  --color-md-surface: #fffbfe;
+  --color-md-on-surface: #1c1b1f;
+  --color-md-surface-dim: #ded8e1;
+  --color-md-surface-bright: #fffbfe;
+  --color-md-surface-container-lowest: #ffffff;
+  --color-md-surface-container-low: #f7f2fa;
+  --color-md-surface-container: #f3edf7;
+  --color-md-surface-container-high: #ece6f0;
+  --color-md-surface-container-highest: #e6e0e9;
+  --color-md-on-surface-variant: #49454f;
+  --color-md-inverse-surface: #313033;
+  --color-md-inverse-on-surface: #f4eff4;
+
+  /* ---- Color: Outline / utility --------------------------------------- */
+  --color-md-outline: #79747e;
+  --color-md-outline-variant: #cac4d0;
+  --color-md-scrim: #000000;
+  --color-md-shadow: #000000;
+
+  /* ---- Typography: base UI face --------------------------------------- */
   --font-sans: 'Roboto', ui-sans-serif, system-ui, sans-serif;
 
-  /* MD3's signature "Emphasized Decelerate" easing (design.md §Animation). */
+  /* ---- Typography: Material type scale (design-revised.md §12) --------
+   * Named roles, not arbitrary heading sizes. Each pairs font-size with
+   * its role's line-height via Tailwind v4's --text-<name>--line-height
+   * companion key. Weight isn't bundled into this token (Tailwind's
+   * --text-* namespace doesn't carry it) — apply font-normal (400) or
+   * font-medium (500) alongside per the table below.
+   *
+   * Role                 Weight
+   * display-*            400
+   * headline-*           400
+   * title-large          400
+   * title-medium/small   500
+   * body-*               400
+   * label-*              500
+   */
+  --text-display-large: 3.5625rem; /* 57px */
+  --text-display-large--line-height: 4rem; /* 64px */
+  --text-display-medium: 2.8125rem; /* 45px */
+  --text-display-medium--line-height: 3.25rem; /* 52px */
+  --text-display-small: 2.25rem; /* 36px */
+  --text-display-small--line-height: 2.75rem; /* 44px */
+
+  --text-headline-large: 2rem; /* 32px */
+  --text-headline-large--line-height: 2.5rem; /* 40px */
+  --text-headline-medium: 1.75rem; /* 28px */
+  --text-headline-medium--line-height: 2.25rem; /* 36px */
+  --text-headline-small: 1.5rem; /* 24px */
+  --text-headline-small--line-height: 2rem; /* 32px */
+
+  --text-title-large: 1.375rem; /* 22px */
+  --text-title-large--line-height: 1.75rem; /* 28px */
+  --text-title-medium: 1rem; /* 16px */
+  --text-title-medium--line-height: 1.5rem; /* 24px */
+  --text-title-small: 0.875rem; /* 14px */
+  --text-title-small--line-height: 1.25rem; /* 20px */
+
+  --text-body-large: 1rem; /* 16px */
+  --text-body-large--line-height: 1.5rem; /* 24px */
+  --text-body-medium: 0.875rem; /* 14px */
+  --text-body-medium--line-height: 1.25rem; /* 20px */
+  --text-body-small: 0.75rem; /* 12px */
+  --text-body-small--line-height: 1rem; /* 16px */
+
+  --text-label-large: 0.875rem; /* 14px */
+  --text-label-large--line-height: 1.25rem; /* 20px */
+  --text-label-medium: 0.75rem; /* 12px */
+  --text-label-medium--line-height: 1rem; /* 16px */
+  --text-label-small: 0.6875rem; /* 11px */
+  --text-label-small--line-height: 1rem; /* 16px */
+
+  /* ---- Logo wordmark font (Saira Extra Condensed) --------------------
+   * Loaded per-component via next/font/google, not globally — this
+   * placeholder documents the family name for reference only; do not
+   * apply --font-logo as a general UI font (design-revised.md §15). */
+
+  /* ---- Shape: Material shape scale (design-revised.md §16-17) ---------
+   * Overrides Tailwind's default radius scale directly (no md- prefix —
+   * shape isn't a brand concern the way color is). "Medium" (12px) is
+   * the standard-card baseline for ordinary product UI; large/extra-
+   * large+ are reserved for marketing/hero surfaces (§35, §81), not
+   * applied to product cards by default. */
+  --radius-xs: 4px; /* extra-small */
+  --radius-sm: 8px; /* small */
+  --radius-md: 12px; /* medium — standard product card */
+  --radius-lg: 16px; /* large */
+  --radius-xl: 24px; /* extra-large */
+  --radius-2xl: 32px; /* Gather expressive: large-increased (marketing only) */
+  --radius-3xl: 36px; /* Gather expressive: extra-large-increased (marketing only) */
+  --radius-4xl: 48px; /* Gather expressive: extra-extra-large (marketing only) */
+
+  /* ---- Elevation: Material elevation levels (design-revised.md §20) ---
+   * Real dual-shadow (key + ambient) Material elevation tiers, not
+   * Tailwind's generic shadow-sm/md/lg/xl treated as if they were the
+   * same thing (§82 names this directly as an anti-pattern). Shadow
+   * color is neutral black at low opacity per M3 spec — it does not vary
+   * by theme the way surface/primary do. */
+  --shadow-elevation-0: none;
+  --shadow-elevation-1:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-2:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-3:
+    0px 1px 3px 0px rgba(0, 0, 0, 0.3), 0px 4px 8px 3px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-4:
+    0px 2px 3px 0px rgba(0, 0, 0, 0.3), 0px 6px 10px 4px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-5:
+    0px 4px 4px 0px rgba(0, 0, 0, 0.3), 0px 8px 12px 6px rgba(0, 0, 0, 0.15);
+
+  /* ---- Motion: spatial vs. effects (design-revised.md §22-23) ----------
+   * Two families with different timing, not one universal
+   * transition-all/300ms rule (§82 names that directly as an
+   * anti-pattern). Effects = color/opacity/shadow changes. Spatial =
+   * position/size/shape changes. Durations are a deliberate lightweight
+   * CSS approximation (§23 permits this absent a motion library) — not
+   * literal Android M3 Expressive spec numbers. */
+  --duration-effects-fast: 100ms;
+  --duration-effects-default: 200ms;
+  --duration-effects-slow: 300ms;
+  --duration-spatial-fast: 250ms;
+  --duration-spatial-default: 350ms;
+  --duration-spatial-slow: 500ms;
+
+  /* Still a useful fallback for standard effects transitions (§23) — not
+     the only motion rule, and never paired with `transition-all`. */
   --ease-md-standard: cubic-bezier(0.2, 0, 0, 1);
 
-  --radius-md-xs: 8px;
-  --radius-md-sm: 12px;
-  --radius-md-md: 16px;
-  --radius-md-lg: 24px;
-  --radius-md-xl: 28px;
-  --radius-md-2xl: 32px;
-  --radius-md-3xl: 48px;
+  /* ---- State layers (design-revised.md §9) -----------------------------
+   * Overlay opacities for hover/focus/pressed/dragged feedback. Applied
+   * as a separate semi-transparent layer on top of a component's
+   * unchanged base container — never by lowering the container's own
+   * background alpha (e.g. bg-md-primary/90), which §9 names directly as
+   * an anti-pattern because it mixes unpredictably with whatever sits
+   * behind the element. */
+  --opacity-state-hover: 0.08;
+  --opacity-state-focus: 0.12;
+  --opacity-state-pressed: 0.12;
+  --opacity-state-dragged: 0.16;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -45,6 +204,6 @@
 }
 
 body {
-  background-color: var(--color-md-background);
-  color: var(--color-md-on-background);
+  background-color: var(--color-md-surface);
+  color: var(--color-md-on-surface);
 }

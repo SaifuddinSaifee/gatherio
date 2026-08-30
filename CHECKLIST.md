@@ -8,7 +8,7 @@ just written. `[~]` means partially done; the note says what's missing.
 
 Legend: `[ ]` not started · `[~]` in progress / partial · `[x]` done & verified
 
-Last updated: 2026-08-30 (Stage 4 — requester auth and workspace — built and verified end-to-end)
+Last updated: 2026-08-30 (design-revised.md adopted as the UI source of truth; Stage 10 token foundation and all three primitives rebuilt against it after an audit found direct contradictions with the earlier design.md)
 
 ---
 
@@ -175,22 +175,41 @@ Last updated: 2026-08-30 (Stage 4 — requester auth and workspace — built and
 
 ## Stage 10 — Design system (Material You)
 
-- [x] Tokens centralized in `globals.css` under Tailwind v4 `@theme` (`md-` prefix) — background, primary, secondary-container, tertiary, surface-container(-low), outline, on-surface-variant
-- [x] Roboto 400/500/700 loaded via `next/font/google`
-- [x] `prefers-reduced-motion` handled globally
-- [x] Radius scale tokens (`--radius-md-xs` through `--radius-md-3xl`)
-- [x] `cubic-bezier(0.2,0,0,1)` easing token defined
-- [ ] **Logo component** — wordmark "Gather" (never "Gather.io"), Saira Extra Condensed Bold (700) loaded via `next/font/google` scoped to this component only, Primary color on neutral surfaces / On Primary (white) reversed on colored surfaces, `-0.01em` tracking, sentence-case default with an all-caps variant for tight spaces (favicon/app-icon tile) — spec added to [design.md](design.md#logo--wordmark) 2026-08-30, not yet implemented in code (currently `app/layout.tsx`'s `<title>` and any header are still plain text, no Logo component exists)
-- [~] `Button` primitive — the Filled and Text/Ghost variant *styling* (pill shape, 90%/80% and 10%/5% state-layer opacity, `active:scale-95`, `hover:shadow-md`, 300ms `ease-md-standard`, focus-visible ring) is correct and working in the Stage 4 auth pages, but only inline on three `<button>` elements — not yet extracted into a shared component, so it's duplicated rather than reusable. Outlined/Tonal/FAB variants untouched.
-- [ ] `Card` primitive — surface-container bg, 24px radius, shadow-sm→shadow-md hover, optional `hover:scale-[1.02]`
-- [x] `TextField` primitive — filled MD3 style (rounded top, square bottom, 2px bottom border, primary on focus, plus the focus-visible ring the Accessibility section requires) — built in Stage 4, first consumer is the sign-up/sign-in forms ([text-field.tsx](src/components/ui/text-field.tsx))
-- [ ] `Chip` primitive
-- [ ] `StatusPill` primitive (maps the 5 status axes to color+label)
-- [ ] `FAB` primitive
-- [ ] Organic blur-shape decoration for hero/key sections (signature MD3 element — not yet present anywhere)
-- [ ] Focus-visible rings on every interactive element (`focus-visible:ring-2 ring-md-primary ring-offset-2`)
-- [ ] Recipient page deliberately skips heavy atmospheric layering (perf constraint) — confirm this restraint is actually followed once the page is built in Stage 6
-- [ ] Dashboard/case list uses the full design language once built in Stage 9
+**2026-08-30: `design-revised.md` supersedes `design.md` as the source of truth for all UI work, per explicit user instruction.** An audit of everything built through Stage 4 found several direct contradictions — not just gaps — between what `design.md` said to do and what `design-revised.md` says is correct. The token foundation and all three existing primitives were rebuilt the same day; the items below reflect the rebuilt state, not the original Stage 4 delivery.
+
+**Contradictions found and fixed** (old doc said do X, new doc names X as an anti-pattern):
+- [x] Button hover/active states no longer change background alpha (`bg-md-primary/90` was the old pattern, explicitly called out in §9 as unpredictable when it mixes with whatever sits behind the element). Now a real overlay state-layer at 8%/12% opacity, unchanged base container — see `Button` below.
+- [x] Removed `active:scale-95` from all buttons (§24: "a 5% scale reduction is often visually excessive... not a universal Material requirement"). State-layer + elevation is now the only press feedback; no scale at all, which §24 lists as the preferred order before reaching for spatial feedback.
+- [x] Removed `transition-all` and the blanket 300ms duration from every interactive element (§23, §82 both name this directly). Buttons/inputs now transition only the specific property that changes (`transition-shadow`, `transition-colors`, `transition-opacity`), using the new spatial/effects duration tokens.
+- [x] Error messaging no longer uses Tertiary (`bg-md-tertiary/10 text-md-tertiary` was the old pattern; §8 and §82 both name "tertiary as a substitute for error" directly as wrong). A real Error color family now exists and is used, with a text prefix ("Error: ...") so color isn't the only indicator (§39, §72).
+- [x] Card radius corrected from 24px ("Large") to 12px ("Medium") for the three existing product-UI cards (sign-up, sign-in, dashboard) — §35 reserves 24px+ for marketing/hero surfaces specifically, and puts ordinary product UI at Medium.
+
+**Token foundation rebuilt in `globals.css`** (was 11 color tokens with no error family, no elevation tokens, no type scale, no motion-token split; now):
+- [x] Full required color-role families (§4.1): primary/secondary/tertiary/error, each with base + on- + container + on-container; full surface hierarchy (surface, surface-dim, surface-bright, surface-container-lowest through -highest, on-surface-variant, inverse-surface/on-surface/primary); outline + outline-variant; scrim + shadow. (Fixed accent roles — `*-fixed`/`*-fixed-dim` — deliberately skipped as optional.) Exact hex values from §5's published table; `surface-dim`/`surface-bright`/`scrim`/`shadow` (not enumerated in §5) sourced from the published M3 baseline scheme for this exact seed, documented inline in `globals.css` rather than invented.
+- [x] Named Material type scale (§12) — all 15 roles (`text-display-large` through `text-label-small`), each pairing font-size + line-height via Tailwind v4's `--text-<name>--line-height` companion key; weight applied per-usage per a table documented in `globals.css` (400 for display/headline/title-large/body, 500 for title-medium/small/label-*). Verified the paired-line-height mechanism actually compiles correctly (checked generated CSS directly, not assumed).
+- [x] Real elevation-level shadow tokens (§20) — `shadow-elevation-0` through `-5`, actual dual key+ambient-shadow Material values, not Tailwind's generic `shadow-sm/md/lg` treated as if they were the same thing (§82 names this directly).
+- [x] Motion duration tokens split spatial vs. effects (§22-23) — `--duration-effects-fast/default/slow` and `--duration-spatial-fast/default/slow`. Note: Tailwind v4 has no themable `--duration-*` named-utility namespace (unlike color/radius/shadow/text) — these are referenced via the `duration-(--duration-effects-fast)` CSS-variable-reference syntax, confirmed working by inspecting compiled CSS.
+- [x] State-layer opacity tokens (§9) — `--opacity-state-hover/focus/pressed/dragged` (8%/12%/12%/16%), referenced the same way (`opacity-(--opacity-state-hover)`).
+- [x] Shape scale renamed to canonical Material naming, overriding Tailwind's own default radius scale directly rather than keeping a parallel `md-`-prefixed namespace (shape isn't a brand concern the way color is): `rounded-xs`(4) `rounded-sm`(8) `rounded-md`(12, standard-card baseline) `rounded-lg`(16) `rounded-xl`(24) `rounded-2xl`(32) `rounded-3xl`(36) `rounded-4xl`(48, the last three being Gather's expressive marketing-only additions per §16).
+- [x] `body` background/text now use `--color-md-surface`/`on-surface` (the `md-background`/`md-on-background` names from the old doc no longer exist as tokens — confirmed no stale references remain anywhere in `src/`).
+- [ ] Dark theme — intentionally scoped out for now, per the final checklist's explicit "exists or is intentionally scoped out" allowance. Revisit when a real need appears; generate a proper dark scheme from the same seed rather than inverting these values (§6).
+- [ ] Fixed accent roles (`primary-fixed` etc.) — skipped as optional, per user's explicit scope choice for this rebuild.
+- [ ] Emphasized typography variants (§13) — skipped; nothing built yet needs the hero-statement/important-metric treatment they're for.
+
+**Primitives rebuilt in `src/components/ui/`:**
+- [x] `Button` ([button.tsx](src/components/ui/button.tsx)) — filled/tonal/outlined/text variants (Elevated and FAB omitted until something needs them, per §28/§33's "don't reach for these just because"). Real state-layer overlay via an `aria-hidden` absolutely-positioned span, opacity-0 by default, `group-hover:opacity-(--opacity-state-hover)` / `group-active:opacity-(--opacity-state-pressed)` — content sits in its own `relative z-10` span to paint above the overlay (verified this is actually necessary: absolutely-positioned siblings paint after static in-flow content in the default CSS stacking order, so without the explicit z-index the overlay would sit on top of the button's own text).
+- [x] `Card` ([card.tsx](src/components/ui/card.tsx)) — filled/outlined variants, `rounded-md` (12px) default, non-interactive by construction (no hover shadow/scale baked in — §36).
+- [x] `TextField` ([text-field.tsx](src/components/ui/text-field.tsx)) — top-corner radius corrected to `rounded-t-xs` (4px, the canonical M3 filled-field shape; the old doc's 12px was an arbitrary guess). Added `errorMessage`/`supportingText` props, `aria-invalid` + `aria-describedby` programmatic association, and a text-prefixed error message so color isn't the sole indicator.
+- [x] `cn()` helper added ([lib/cn.ts](src/lib/cn.ts), `clsx` + `tailwind-merge` v3) — **caught a real bug** while wiring `Card` into the sign-up page: a component's own default (`p-6`) and a caller's override (`p-8`) were both landing in the class string with no defined winner, since plain string concatenation can't resolve conflicting Tailwind utilities. All three primitives now merge classes through `cn()` instead of raw template strings.
+- [ ] `Chip`, `StatusPill`, `FAB` — still unbuilt, add when a real consumer needs them.
+
+**Known partial gaps in the rebuilt primitives** (real, not hidden — see also "Known gaps" below):
+- [~] `TextField` label sits statically above the field rather than animating as a true floating label (part of §38's anatomy, not implemented).
+- [~] Logo — spec is fully in `design-revised.md` §15 now (supersedes the `design.md` version), matches what was already built in `page.tsx` (GATHER, Saira Extra Condensed Bold, Primary color, `-0.01em` tracking). Still not extracted into a shared `Logo` component — only one consumer exists so far.
+
+**Marketing/product distinction (§81, §62) applied:** no atmospheric blur/gradient/glassmorphism/hover-lift decoration has been added anywhere — correctly, since nothing built so far is a marketing/hero surface. The recipient page's planned restraint (skip heavy decoration, render fast on a weak connection) turns out to already be the new doc's default for *all* product UI, not a special-cased exception.
+
+**Verified:** `tsc --noEmit`, `eslint .`, `vitest run`, `playwright test` (both Stage 4 e2e specs, unchanged assertions still pass against the new markup), and a full `next build` all green after the rebuild. Spot-checked the actually-compiled CSS (not just the source) for `text-display-large`'s paired line-height, `shadow-elevation-1`'s dual-shadow value, `opacity-state-hover`, the overridden `rounded-md`, and the `duration-(--var)` / `rounded-(--var)` reference syntax — all confirmed correct, not just assumed from Tailwind's docs.
 
 ---
 
@@ -226,4 +245,7 @@ Last updated: 2026-08-30 (Stage 4 — requester auth and workspace — built and
 - **Storage residency decision (R2 vs. ap-south-1) still open** — see the plan's dedicated section. Should be resolved before the first pilot, not discovered during one.
 - **`auth.ts` schema was hand-written and had a real bug** (missing `account.issuer`), found and fixed in Stage 4 by reading `@better-auth/core`'s source directly rather than running `better-auth generate` (the CLI package was never installed). Low but nonzero residual risk: a future Better Auth minor version bump could shift the schema again in a way this project won't catch until something breaks at runtime, since there's no automated check against the library's actual schema — worth revisiting if `better-auth` is ever upgraded.
 - **`src/lib/auth-client.ts` is currently dead code.** Built per the original plan sketch, but the sign-up/sign-in/sign-out flows ended up as server actions calling `auth.api.*` directly instead (less client JS, consistent with the recipient-page precedent). Fine to leave for whichever later stage wants client-side session reactivity, but if that never happens it should eventually be deleted rather than left as an unused, silently-rotting file.
-- **Three buttons, one styling, zero shared component.** The sign-up/sign-in/sign-out buttons in Stage 4 correctly implement the Filled and Text/Ghost Button variants from design.md, but as duplicated inline Tailwind classes across three files, not a shared `Button` primitive. Stage 5 or 9 (whichever touches buttons next) should extract this before a fourth copy appears.
+- ~~**Three buttons, one styling, zero shared component.**~~ **Resolved 2026-08-30** during the design-revised.md rebuild — extracted into `src/components/ui/button.tsx`, all three call sites now use it.
+- **`TextField`'s label doesn't float.** It's a real `<label>`, correctly associated, but sits statically above the input rather than animating into the field per §38's full filled-field anatomy. Secondary piece of the spec, not urgent, but a real gap if a future reviewer checks this component against §38 line-by-line.
+- **Only one component consumes the Logo spec.** `page.tsx` implements `design-revised.md` §15 directly (GATHER, Saira Extra Condensed, correct color/tracking) but there's no shared `Logo` component yet — fine with one consumer, needs extracting before a second page wants the wordmark (e.g. a nav bar in Stage 9).
+- **`--duration-*` and `--opacity-state-*` aren't real Tailwind named-utility namespaces** (confirmed by testing — only `--color-*`, `--radius-*`, `--text-*`, `--shadow-*` support the `--namespace-<name>` → `<utility>-<name>` generation pattern in this Tailwind v4 version). Referencing them via `duration-(--duration-effects-fast)` / `opacity-(--opacity-state-hover)` works and is verified in compiled CSS, but it's more verbose than the color/radius/shadow tokens and easy to typo without a wrapper. If this pattern gets used in many more components, consider a small `cn()`-adjacent helper or documenting the exact syntax more prominently.
