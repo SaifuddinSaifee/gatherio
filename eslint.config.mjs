@@ -14,10 +14,22 @@ const config = [
   {
     // Tenant isolation (design-md-gather-io plan, Stage 2): every
     // workspace-scoped table must be read through src/db/scoped.ts.
-    // Reaching for the raw `db` handle outside that file bypasses the
+    // Reaching for the raw `db` handle outside the db layer bypasses the
     // WHERE workspace_id = ? filter it applies for you.
+    //
+    // Everything under src/db/ is the db layer itself and is trusted with
+    // raw access by definition (scoped.ts, client.ts, schema/**,
+    // migrate.ts, seed.ts, reset.ts, session.ts, workspace.ts, ...) — an
+    // enumerated file list here needed updating every time a new
+    // legitimate db-internal file was added (twice in Stage 4 alone), so
+    // this is a directory-level ignore instead.
+    //
+    // One carve-out outside src/db/, from Stage 4: src/lib/auth.ts.
+    // Better Auth's user/session/account/verification tables are
+    // intentionally unscoped — a user's identity exists before and
+    // independent of any workspace membership.
     files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/db/scoped.ts', 'src/db/client.ts', 'src/db/schema/**', 'src/db/migrate.ts'],
+    ignores: ['src/db/**', 'src/lib/auth.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -28,6 +40,14 @@ const config = [
               importNames: ['db'],
               message:
                 'Import scoped(workspaceId) from @/db/scoped instead of the raw db handle, so every query is workspace-filtered.',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/db/client'],
+              importNames: ['db'],
+              message:
+                'Import scoped(workspaceId) from @/db/scoped instead of the raw db handle, so every query is workspace-filtered. (Caught via relative-path import — use the @/db/client form or, better, scoped().)',
             },
           ],
         },

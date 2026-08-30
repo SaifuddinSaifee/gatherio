@@ -8,7 +8,7 @@ just written. `[~]` means partially done; the note says what's missing.
 
 Legend: `[ ]` not started · `[~]` in progress / partial · `[x]` done & verified
 
-Last updated: 2026-08-30 (design.md logo/wordmark spec added; product name corrected to "Gather" throughout)
+Last updated: 2026-08-30 (Stage 4 — requester auth and workspace — built and verified end-to-end)
 
 ---
 
@@ -88,17 +88,27 @@ Last updated: 2026-08-30 (design.md logo/wordmark spec added; product name corre
 
 ## Stage 4 — Requester auth and workspace
 
-- [ ] Reconcile hand-written `auth.ts` schema against `better-auth generate` output (may need a migration)
-- [ ] Better Auth server config (`src/lib/auth.ts` or similar) — email+password provider
-- [ ] Better Auth client/hooks for the app router
-- [ ] Sign-up flow: creates `user` + `workspace` + `workspace_member(role=owner)` in one transaction
-- [ ] Sign-in flow
-- [ ] Session → `WorkspaceId` resolution helper used by every server action/route handler
-- [ ] Route protection for `app/(app)/**` (redirect unauthenticated to sign-in)
-- [ ] Workspace switcher (even if a user only ever has one workspace in Phase 1a, the data model allows more)
-- [ ] `workspace_member` role check helper (owner vs member) for actions that need it
-- [ ] Sign-out
-- [ ] Verify: fresh sign-up creates exactly one workspace + one owner membership; a second browser session can't see another workspace's data (ties into Stage 2's isolation tests)
+- [x] Reconciled hand-written `auth.ts` schema against Better Auth 1.7.2's actual requirements — done by reading `@better-auth/core`'s `buildAuthTables()` directly (CLI package isn't installed), not by running `better-auth generate`. **Found and fixed a breaking bug**: `account.issuer` was missing entirely — Better Auth writes it unconditionally with no DB default, so every sign-up would have failed a NOT NULL violation. Also added `access_token_expires_at`/`refresh_token_expires_at` (replacing one combined `expiresAt`), `scope`, a composite unique index on `(issuer, account_id)`, and non-unique indexes on `session.user_id` and `verification.identifier`. ([auth.ts](src/db/schema/auth.ts))
+- [x] Bumped `drizzle-orm` 0.38.4 → 0.45.2 and `drizzle-kit` to match — `@better-auth/drizzle-adapter`'s peer dependency requires `^0.45.2`, which the original pin didn't satisfy (pnpm installed anyway; peer warnings aren't fatal, but it was a real risk). Verified via a full clean migration regenerate + reseed + the whole test suite afterward.
+- [x] Regenerated a single clean initial migration (deleted `drizzle/`, dropped and recreated the local schema, regenerated) rather than layering an ALTER migration onto a migration that had never shipped anywhere.
+- [x] **Decision recorded in the plan**: kept hand-rolled `workspace`/`workspace_member` rather than adopting Better Auth's built-in `organization` plugin. The plugin's `organization` table has no typed equivalent for `default_authentication_policy` (the §4.7 auth-ladder default) short of an untyped `metadata` JSON blob, and all 25 Stage 2 tables already FK to `workspace.id`. See the plan file's Stage 4 section for the full reasoning.
+- [x] Better Auth server config ([auth.ts](src/lib/auth.ts)) — `drizzleAdapter` + `emailAndPassword` + `nextCookies()` (required last-in-array so direct server-action calls to `auth.api.signUpEmail`/`signInEmail` persist the session cookie, not just calls through the mounted route)
+- [x] Route handler ([api/auth/[...all]/route.ts](src/app/api/auth/[...all]/route.ts)) via `toNextJsHandler`
+- [x] Client (`src/lib/auth-client.ts`) — created per the plan, but **currently unused**: sign-up/sign-in/sign-out ended up as server-rendered forms with server actions calling `auth.api.*` directly instead, consistent with the project's established minimal-client-JS ethos (same reasoning as the recipient page). Kept for a future stage that wants client-side reactivity (e.g. a live `useSession()` in a nav bar).
+- [x] Session → `WorkspaceId` resolution helper — `getCurrentSession()` in [db/session.ts](src/db/session.ts), the one choke point every server action/route handler uses
+- [x] Sign-up flow ([sign-up/actions.ts](src/app/(auth)/sign-up/actions.ts)): `auth.api.signUpEmail` then `createWorkspaceForUser` ([db/workspace.ts](src/db/workspace.ts)) in one `db.transaction()`; on failure, compensating deletion of the orphaned user row (not a single cross-library transaction — Better Auth's own commit isn't something our code can join)
+- [x] Sign-in flow ([sign-in/actions.ts](src/app/(auth)/sign-in/actions.ts))
+- [x] Sign-out ([app/actions.ts](src/app/(app)/actions.ts))
+- [x] Route protection for `app/(app)/**` via [layout.tsx](src/app/(app)/layout.tsx) — server-side `getCurrentSession()` check, redirect to `/sign-in`
+- [x] `requireRole(session, role)` helper in `db/session.ts` — built even though nothing calls it yet beyond the sign-up-creates-owner path
+- [x] **Descoped from the original sketch**: the workspace switcher. With no invite-another-user flow built, sign-up is the only way a `workspace_member` row is ever created and it always creates exactly one workspace per user — a switcher for a state that cannot occur would be building for a hypothetical. Revisit once an invite flow exists.
+- [x] **Real bug found and fixed in the Stage 2 ESLint tenant-isolation rule while extending it**: the `no-restricted-imports` rule only matched the literal `@/db/client` alias import — a relative import (`../../db/client`) bypassed it entirely. Added a `patterns` entry (`**/db/client`) to close that loophole; verified with two probe files (alias form and relative-path form), both now caught.
+- [x] Simplified the rule's file-by-file `ignores` allowlist to a directory-level `src/db/**` ignore (plus `src/lib/auth.ts`) — the enumerated-file approach had already needed updating twice in this one stage (`session.ts`, `workspace.ts`) and would keep needing it for every future legitimate db-internal file.
+- [x] First real cut of Stage 10's `TextField` primitive ([components/ui/text-field.tsx](src/components/ui/text-field.tsx)) — built here because the sign-up/sign-in forms are its first consumer, not deferred to Stage 10
+- [x] Verified end-to-end with Playwright (not just "the page didn't error"): [e2e/stage4-auth.spec.ts](e2e/stage4-auth.spec.ts) — sign-up → dashboard shows the right workspace name and role → sign-out → unauthenticated `/dashboard` redirects → sign-in → wrong password shows an inline error, not a 500. [e2e/stage4-isolation.spec.ts](e2e/stage4-isolation.spec.ts) — two independent sign-ups in separate browser contexts, second user's dashboard never shows the first user's workspace name. Also spot-checked the DB directly: exactly one `workspace` row and one `workspace_member(role='owner')` row per sign-up.
+- [x] `playwright.config.ts` written (assumes `pnpm dev` + Docker already running locally, matching how every other verification in this project has been done — no `webServer` auto-start)
+- [x] Fixed a `vitest.config.ts` gap surfaced by adding `e2e/`: Vitest's default glob was picking up the new Playwright `*.spec.ts` files and failing to load them (wrong `test()` global) — added `exclude: ['e2e/**']`
+- [x] Full `tsc --noEmit`, `eslint .`, `vitest run`, and `playwright test` all green after every change above, including after the `drizzle-orm` bump specifically (the point where a silent breakage from that version jump would have shown up)
 
 ## Stage 5 — Templates and cases
 
@@ -171,9 +181,9 @@ Last updated: 2026-08-30 (design.md logo/wordmark spec added; product name corre
 - [x] Radius scale tokens (`--radius-md-xs` through `--radius-md-3xl`)
 - [x] `cubic-bezier(0.2,0,0,1)` easing token defined
 - [ ] **Logo component** — wordmark "Gather" (never "Gather.io"), Saira Extra Condensed Bold (700) loaded via `next/font/google` scoped to this component only, Primary color on neutral surfaces / On Primary (white) reversed on colored surfaces, `-0.01em` tracking, sentence-case default with an all-caps variant for tight spaces (favicon/app-icon tile) — spec added to [design.md](design.md#logo--wordmark) 2026-08-30, not yet implemented in code (currently `app/layout.tsx`'s `<title>` and any header are still plain text, no Logo component exists)
-- [ ] `Button` primitive — pill-shaped, state-layer opacity (90%/80% on solid, 10%/5% on transparent), `active:scale-95`, all 5 variants (filled/tonal/outlined/text/FAB)
+- [~] `Button` primitive — the Filled and Text/Ghost variant *styling* (pill shape, 90%/80% and 10%/5% state-layer opacity, `active:scale-95`, `hover:shadow-md`, 300ms `ease-md-standard`, focus-visible ring) is correct and working in the Stage 4 auth pages, but only inline on three `<button>` elements — not yet extracted into a shared component, so it's duplicated rather than reusable. Outlined/Tonal/FAB variants untouched.
 - [ ] `Card` primitive — surface-container bg, 24px radius, shadow-sm→shadow-md hover, optional `hover:scale-[1.02]`
-- [ ] `TextField` primitive — filled MD3 style (rounded top, square bottom, 2px bottom border, primary on focus)
+- [x] `TextField` primitive — filled MD3 style (rounded top, square bottom, 2px bottom border, primary on focus, plus the focus-visible ring the Accessibility section requires) — built in Stage 4, first consumer is the sign-up/sign-in forms ([text-field.tsx](src/components/ui/text-field.tsx))
 - [ ] `Chip` primitive
 - [ ] `StatusPill` primitive (maps the 5 status axes to color+label)
 - [ ] `FAB` primitive
@@ -197,7 +207,7 @@ Last updated: 2026-08-30 (design.md logo/wordmark spec added; product name corre
 ## Cross-cutting verification (from the plan's Verification section)
 
 - [x] Clean-start command works: `docker compose up -d && pnpm install && pnpm db:migrate && pnpm db:seed && pnpm dev`
-- [ ] Playwright installed and configured (`playwright.config.ts` not yet written)
+- [x] Playwright installed and configured ([playwright.config.ts](playwright.config.ts)) — two specs live so far ([e2e/stage4-auth.spec.ts](e2e/stage4-auth.spec.ts), [e2e/stage4-isolation.spec.ts](e2e/stage4-isolation.spec.ts)), covering Stage 4 rather than the plan's two product journeys yet
 - [ ] E2E journey 1 — happy path: create case → recipient uploads+answers → submit → approve → case closes → export contains everything
 - [ ] E2E journey 2 — rework loop: submit → request changes with reason → reason shown on that one item only → resubmit → both versions linked in history → next reminder carries the reason
 - [x] Integration test: cross-workspace read isolation (via ESLint rule; a runtime DB-level test using `scoped()` against two workspaces is still open)
@@ -214,4 +224,6 @@ Last updated: 2026-08-30 (design.md logo/wordmark spec added; product name corre
 
 - **Download route doesn't check malware scan status.** `/api/download/[token]` (Stage 3) will serve any file whose token is valid, regardless of `file_asset.malware_scan_status`. This is fine today because no real upload flow exists yet, but Stage 6/9 must gate downloads on scan status before this touches real files — noted here so it isn't forgotten.
 - **Storage residency decision (R2 vs. ap-south-1) still open** — see the plan's dedicated section. Should be resolved before the first pilot, not discovered during one.
-- **`auth.ts` schema is hand-written**, guessing Better Auth's default Postgres field names. Stage 4 must confirm this against `better-auth generate` output and migrate if it drifts.
+- **`auth.ts` schema was hand-written and had a real bug** (missing `account.issuer`), found and fixed in Stage 4 by reading `@better-auth/core`'s source directly rather than running `better-auth generate` (the CLI package was never installed). Low but nonzero residual risk: a future Better Auth minor version bump could shift the schema again in a way this project won't catch until something breaks at runtime, since there's no automated check against the library's actual schema — worth revisiting if `better-auth` is ever upgraded.
+- **`src/lib/auth-client.ts` is currently dead code.** Built per the original plan sketch, but the sign-up/sign-in/sign-out flows ended up as server actions calling `auth.api.*` directly instead (less client JS, consistent with the recipient-page precedent). Fine to leave for whichever later stage wants client-side session reactivity, but if that never happens it should eventually be deleted rather than left as an unused, silently-rotting file.
+- **Three buttons, one styling, zero shared component.** The sign-up/sign-in/sign-out buttons in Stage 4 correctly implement the Filled and Text/Ghost Button variants from design.md, but as duplicated inline Tailwind classes across three files, not a shared `Button` primitive. Stage 5 or 9 (whichever touches buttons next) should extract this before a fourth copy appears.

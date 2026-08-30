@@ -16,11 +16,14 @@ CREATE TABLE "account" (
 	"user_id" text NOT NULL,
 	"account_id" text NOT NULL,
 	"provider_id" text NOT NULL,
+	"issuer" text NOT NULL,
 	"access_token" text,
 	"refresh_token" text,
 	"id_token" text,
+	"access_token_expires_at" timestamp with time zone,
+	"refresh_token_expires_at" timestamp with time zone,
+	"scope" text,
 	"password" text,
-	"expires_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -349,4 +352,7 @@ ALTER TABLE "signature_envelope" ADD CONSTRAINT "signature_envelope_workspace_id
 ALTER TABLE "signature_envelope" ADD CONSTRAINT "signature_envelope_requirement_id_requirement_id_fk" FOREIGN KEY ("requirement_id") REFERENCES "public"."requirement"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "signature_envelope" ADD CONSTRAINT "signature_envelope_completed_document_asset_id_file_asset_id_fk" FOREIGN KEY ("completed_document_asset_id") REFERENCES "public"."file_asset"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "signature_envelope" ADD CONSTRAINT "signature_envelope_evidence_asset_id_file_asset_id_fk" FOREIGN KEY ("evidence_asset_id") REFERENCES "public"."file_asset"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "account_issuer_account_id_key" ON "account" USING btree ("issuer","account_id");--> statement-breakpoint
+CREATE INDEX "session_user_id_idx" ON "session" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "verification_identifier_idx" ON "verification" USING btree ("identifier");--> statement-breakpoint
 CREATE UNIQUE INDEX "reminder_dispatch_assignment_id_reminder_sequence_key" ON "reminder_dispatch" USING btree ("assignment_id","reminder_sequence");
