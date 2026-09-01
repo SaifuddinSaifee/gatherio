@@ -328,15 +328,140 @@ The `reason` field is not a note. It is the input to the next reminder for that 
 
 **SignatureEnvelope**: mirror the provider rather than reproducing its legal model. `id, requirement_id, provider, provider_envelope_id, document_hash, signature_status, completed_document_asset_id, evidence_asset_id`
 
-**ReminderPolicy** `cadence, channels, quiet_hours, stop_condition, unopened_cadence, stalled_cadence`
+**ReminderPolicy** `cadence, channels, quiet_hours, stop_condition, unopened_cadence, stalled_cadence, notify_requester_on_send`
 
-Separate policy from messages. The two-state distinction (never opened versus opened and stalled) lives here and drives materially different copy.
+Separate policy from messages. The two-state distinction (never opened versus opened and stalled) lives here and drives materially different copy. This policy governs reminders **to the recipient** only — see "Notification and reminder model" immediately below for the separate, requester-facing system.
 
 **DeliveryAttempt** `recipient, channel, status, provider_message_id, sent_at, delivered_at, bounced_at`
 
 **AuditEvent**: append-only. `id, workspace_id, case_id, actor_type, actor_id, event_type, object_type, object_id, occurred_at, ip_address, user_agent, metadata, previous_event_hash, event_hash`
 
 Hash-chaining is optional at launch. Immutability and reliable event retention are not.
+
+## **Notification and reminder model**
+
+Two systems, one shared delivery layer, two different audiences, two different triggers. This split was implicit in the entities above; it is made explicit here because collapsing both into one "notification setting" — the natural first instinct, by analogy to something like Google Calendar's per-event reminder — produces the wrong schema and the wrong UI.
+
+### The two audiences
+
+| | Recipient reminders | Requester notifications |
+| ----- | ----- | ----- |
+| Who receives it | The external party — the vendor, client, candidate | The internal user — the requester's own team |
+| Purpose | Get the outstanding item submitted | Keep the requester aware of case state without having to check the dashboard |
+| Trigger | A schedule (cadence) | A discrete event — something changed |
+| Already modeled above? | Yes — `ReminderPolicy`, `DeliveryAttempt`, `reminder_dispatch` (§10) | No — new in this section |
+| Available channels | Email, SMS, WhatsApp — never push | In-app, email, browser/desktop push |
+
+**Why the Calendar model doesn't transfer to the requester side.** Calendar reminders are time-offset, anchored to one scheduled event: "notify me 10 minutes before." A case has many independent items on independent lifecycles at once — one overdue, one awaiting review, one just submitted — so the right shape is event-driven, closer to how GitHub or Slack notify on activity than to how Calendar notifies before an appointment. Recipient reminders are legitimately schedule-driven; requester notifications are not, and forcing them into the same cadence-based shape is the mistake to avoid.
+
+### Recipient reminders — sequencing, not new mechanism
+
+Nothing new is added to the engine itself; this only makes explicit how policy applies across the hierarchy:
+
+- **Template-level default.** `WorkflowTemplate` carries a default `ReminderPolicy` (cadence, channels, quiet hours). Every case instantiated from that template inherits it at creation time — the same snapshot-then-independent posture already used for requirement definitions: editing a template's default policy later never reaches back into a live case.
+- **Case-level override.** A requester can tighten or loosen cadence for one specific case — a chronically slow client gets a tighter cadence — without touching the template.
+- **Never a push channel.** Recipients never install anything and never hold an account (§3.1), so push is structurally unavailable to them. Only email, SMS, and WhatsApp apply.
+- **Idempotency and quiet hours** are unchanged from Stage 8 of the build plan: one `reminder_dispatch` row per `(assignment_id, reminder_sequence)`, respected in the workspace's own timezone.
+
+### Requester notifications — the actual gap
+
+Today the only way a requester learns a case's state is opening the dashboard (§9, pull-only) or reading the append-only `AuditEvent` log. Nothing pushes state changes to the requester. Two new entities close this:
+
+**NotificationPreference** — one row per user, per event type: `id, user_id, event_type, in_app_enabled, email_enabled, push_enabled`. Lets each requester tune which events reach them and by which channel, matching the shape Slack and GitHub already use for this — deliberately not reinvented.
+
+**Notification** — the requester-facing feed, append-only like `AuditEvent` but user-addressed and read-tracked: `id, workspace_id, user_id, case_id, event_type, payload, read_at, created_at, delivered_channels`.
+
+**Event taxonomy.** The concrete triggers, each with a sensible default so the feature is usable out of the box rather than requiring configuration first:
+
+| Event | Default channel | On by default? |
+| ----- | ----- | ----- |
+| Recipient viewed the link for the first time | In-app | Yes |
+| Recipient submitted or resubmitted an item | In-app, email | Yes |
+| A submission is awaiting review | In-app, email | Yes |
+| Due date is approaching (configurable lead time, e.g. 3 days out) | In-app | Yes |
+| Due date has passed and the item is still outstanding | In-app, email | Yes |
+| Case fully completed | In-app, email | Yes |
+| A reminder to the recipient failed to deliver (bounced, suppressed) | In-app, email | Yes — actionable, not informational: it means the recipient isn't being chased at all |
+| A reminder was successfully sent to the recipient | In-app | **No** |
+| A held document is expiring or has expired (Phase 1.5, tied to `DocumentValidity`) | In-app, email | Yes |
+
+The "reminder sent" row is off by default on purpose. It's the one place a naive, Calendar-style "notify me every time something fires" implementation would actively hurt the product — it would relocate the exact notification fatigue Gather exists to spare recipients from onto the requester instead. The requester already trusts the system to send reminders; they need to hear about it only when something needs their attention (a bounce, a due date, a submission).
+
+**Channels, concretely:**
+
+- **In-app** — always on, feeds the Notifications tab below. No new infrastructure.
+- **Email** — reuses the transactional email provider already in the architecture (§6). Per-event for Phase 1a/1b; a digest mode is a reasonable Phase 2 addition once volume justifies it.
+- **Browser/desktop push** — genuinely new infrastructure: Web Push with a service worker and VAPID keys. Not in the current adapter list (Storage, Notify, Scan, ESign) — needs its own adapter (`WebPush.subscribe / send`) following the same interfaces-first pattern as the others. Opt-in per user, per browser.
+
+### The Notifications tab (per case)
+
+The concrete surface the requester looks at, split into two sections so "what have we sent" and "what's coming next" are never conflated:
+
+- **Sent** — every reminder actually dispatched to the recipient, read directly off `reminder_dispatch` / `DeliveryAttempt`: timestamp, channel, delivery status (queued, sent, delivered, bounced). A read view, not a new data source.
+- **Scheduled** — the next reminder time, computed from the case's `ReminderPolicy` cadence, the last dispatch, and whether `stop_condition` has already been met. If nothing further is scheduled — the recipient already submitted, or the policy's stop condition was reached — the tab says so explicitly ("No further reminders scheduled") rather than showing an empty list, which would be indistinguishable from a load failure.
+- **Send now** — a composer for an immediate, manual message outside the automatic cadence entirely. See the next subsection for what this can and can't do per channel.
+- The same feed also surfaces that case's requester-facing events from the taxonomy above (due date passed, review needed), visually distinguished from the "Sent" entries so the requester never confuses "a reminder went to the vendor" with "something happened that needs my attention."
+
+### On-demand messaging — "Send now"
+
+The Notifications tab is not only a read-only history. It carries one more card: a single message the requester composes and dispatches immediately, outside the automatic cadence — the manual-chase equivalent of "I'm just going to ping them right now." It is explicitly **not** a chat: there is no reply channel back into Gather. If the recipient hits reply on the email, or replies on WhatsApp, that reply lands in the requester's own inbox or phone exactly as it would today, never inside the product. This keeps faith with §3.1's recipient thesis — the recipient still never needs an account or a place to log back into, even for this.
+
+**The channel constraint this runs into, and why it isn't optional:**
+
+| Channel | Can the requester type freeform text right now? |
+| ----- | ----- |
+| Email | Yes, always |
+| WhatsApp | Only within a 24-hour window opened by the recipient's own inbound message to that number — which essentially never happens here, since recipients aren't expected to message back. Outside that window, the WhatsApp Business API only permits a **pre-approved template** with fixed wording and named variable slots (§4.8's constraint, made concrete) |
+| SMS (India) | TRAI's DLT regime requires every commercial SMS template to be pre-registered with the carrier before it can be sent; an unregistered freeform message is silently dropped, not merely discouraged |
+
+So the composer has to branch by channel, not present one universal text box: **email gets a plain text field; WhatsApp and SMS get a picker constrained to that requirement's approved `MessageTemplate` rows, with only the variable slots editable.** Building this as one universal "type and send" box would work in every demo and then silently fail to deliver on WhatsApp the first time it's used against a real recipient.
+
+Two schema consequences: `reminder_dispatch` gains a `trigger_type` column (`scheduled | manual | conditional`) so a manual send doesn't compete with the automated cadence's `(assignment_id, reminder_sequence)` uniqueness constraint — it's its own row, not a slot in that sequence. And a manual send never raises the "reminder was sent" requester-notification event from the taxonomy above — the requester just did it themselves and doesn't need to be told about their own action.
+
+### Message templates and custom copy
+
+Today's `ReminderPolicy` only carries cadence and channel — no actual words. That gap gets its own entity: **`MessageTemplate`** — `id, workflow_template_id, case_id, event_type, channel, body, provider_template_id, created_by, updated_at`. Exactly one of `workflow_template_id` / `case_id` is set — a template defines the default copy, a case can override it, the same inheritance already used for `ReminderPolicy` itself.
+
+`body` stores the raw text with variable tokens still in place (`{{party.name}}`, not the resolved value) — rendering happens at send time. A message like *"If you have not completed this step, please do that right now"* is exactly a `MessageTemplate.body` attached to whichever event type it belongs to.
+
+For WhatsApp and SMS, `body` is not arbitrary even in this editor: it has to mirror a template already submitted to and approved by the provider (`provider_template_id` links to that approved template), and only the variable values are actually editable here — the surrounding wording is fixed the moment it's approved. For email, `body` is genuinely free text. The editor should say this plainly per channel, rather than let someone edit WhatsApp copy that will later fail to match what the provider approved.
+
+### Conditional, per-event messaging — a lookup, not a rules engine
+
+The product doc already takes an explicit, repeated stance against a general conditional-logic engine (§4, §10's "Do not build" list, and the `requirement_definition.visibility_condition` seam, itself deliberately bounded to one hop). This feature stays inside that discipline rather than becoming the exception to it.
+
+What "conditional" means here is narrow and concrete: **the event taxonomy already defined above — due date passed, review needs changes, delivery bounced, and so on — can each carry an optional `MessageTemplate`, optionally scoped to one specific requirement instead of the whole case.** "If `#insurance-certificate`'s due date passes, send this exact message" is a lookup — `(event_type, requirement_id | null) → MessageTemplate` — not an if/then condition builder. There is no AND/OR logic, no cross-requirement conditions, no user-authored boolean expressions. If a real customer need for that shows up later, it gets evaluated as its own decision then, the same way `visibility_condition` was deliberately scoped and left unevaluated until a real need appears — not built speculatively now.
+
+### Message variables — `@` and `#` references
+
+The mechanism that makes the two features above actually usable — and, not incidentally, the same mechanism that makes WhatsApp/SMS template variable slots fillable in the first place, since an approved template's `{{1}}`/`{{2}}` slots need to come from *something* structured.
+
+Two reference namespaces, resolved by stable id rather than by text match so a later rename doesn't silently break an existing message:
+
+- **`@`** — the recipient: `@party.name`, `@party.email`, `@party.phone`, `@party.organization_name`, all existing columns on `Party`. A second, distinct token, `@me.name`, reaches the requester's own name for sign-offs ("regards, @me.name") — kept separate from `@party.*` rather than overloading `@` for both audiences, so an author is never unsure which person a given mention resolves to.
+- **`#`** — a requirement within the same template or case, by title: `#insurance-certificate`. Stored as `{{requirement:<id>}}`, not as the literal text "insurance-certificate," so renaming the requirement later updates every message that references it automatically.
+
+Authoring UX: typing `@` or `#` opens an autocomplete list — the standard mention-picker pattern (Slack, Notion, GitHub all do this; not a novel interaction to design). At the **template** level the list is that template's own requirement definitions and the generic party-field placeholders (no live party exists yet, so `@party.name` shows as the token itself, not a resolved value). At the **case** level — specifically the "Send now" composer — the list is that case's actual live party and requirements, and can show a live preview of the resolved text before sending.
+
+**One failure mode worth naming rather than leaving implicit:** a `#`-referenced requirement can be deleted after a message template already references it. The editor must show a visible "this reference no longer exists" warning on that template rather than silently sending a message with a blank or broken substitution — the same posture §4.4 already takes toward never leaving someone to guess at broken state.
+
+### What this adds to the entity list above
+
+- `ReminderPolicy` gains `notify_requester_on_send: boolean` (default `false`) — the switch behind the one non-default row in the taxonomy table.
+- `WorkflowTemplate` gains a default `ReminderPolicy` reference, inherited by cases at instantiation, mirroring how requirement definitions already snapshot into a case.
+- Two new entities: `NotificationPreference` and `Notification`, both defined above.
+- A third new entity: `MessageTemplate` (above) — carries actual message copy, inherited from template to case the same way `ReminderPolicy` is, optionally scoped to a single requirement for the conditional-messaging case.
+- `reminder_dispatch` gains `trigger_type: scheduled | manual | conditional`, so manual and event-triggered sends never collide with the automated cadence's idempotency constraint.
+
+### Sequencing
+
+This is schema-touching, so where it lands matters:
+
+- **Recipient reminders** (the existing `ReminderPolicy` engine) stay exactly where §10 already puts them — Phase 1a, since the unopened/stalled distinction is load-bearing for the core thesis.
+- **Requester notification center** (in-app feed, Notifications tab, email channel, `NotificationPreference`) belongs in **Phase 1b** — "before charging beyond pilots" is exactly when a requester running a real case stops tolerating a dashboard they have to remember to check.
+- **On-demand "Send now," `MessageTemplate`, per-event message overrides, and the `@`/`#` mention system** all belong in **Phase 1b** alongside the notification center — same surface (the Notifications tab), same underlying entities, no new infrastructure beyond the `Notify` adapter already planned.
+- **WhatsApp and SMS template approval is an operational dependency, not a build task.** Meta's WhatsApp template review and India's DLT SMS registration both take real calendar time and happen outside this codebase entirely. Start that process before Phase 1b needs it, not when it's already blocking a release — email needs none of this and can ship first regardless.
+- **Browser/desktop push** is **Phase 2 or later** — new infrastructure (a Web Push adapter) that doesn't touch the completion-engine thesis actually being tested in the pilots, so building it early would be the same kind of scope creep §10 already warns against elsewhere.
 
 ---
 
@@ -364,6 +489,7 @@ These are engineering estimates, not delivery promises. Security review, custome
 * Direct-to-storage uploads via short-lived signed URLs  
 * A queue for reminders, scans, exports, and webhook processing  
 * A transactional email provider with bounce and complaint webhooks  
+* A Web Push adapter (service worker \+ VAPID keys) for requester-facing browser/desktop notifications — Phase 2+, see "Notification and reminder model" in §5  
 * A managed authentication provider for requester accounts only  
 * An external e-signature API  
 * Server-side PDF generation only where genuinely needed  
@@ -600,11 +726,13 @@ The market validation report's Phase 1 contains roughly seventeen items. That is
 * Optional email or SMS OTP  
 * Delivery and bounce tracking  
 * Append-only activity history  
+* Requester notification center — in-app feed, per-case Notifications tab, email channel, per-event preferences (see "Notification and reminder model" in §5)  
+* On-demand "Send now" messaging, `MessageTemplate` custom copy, per-event message overrides, and the `@`/`#` mention system (same section) — WhatsApp/SMS need provider template approval in parallel, which should start early since it isn't work this codebase controls  
 * Retention and deletion controls  
 * One storage export integration  
 * Multi-party assignment
 
-**Do not build:** generic automation builder, marketplace, payments, AI extraction, dozens of integrations, persistent recipient accounts, advanced analytics, full procurement, native signing, conditional logic, in-app chat, document generation.
+**Do not build:** generic automation builder, marketplace, payments, AI extraction, dozens of integrations, persistent recipient accounts, advanced analytics, full procurement, native signing, a general conditional-logic / rules engine (the bounded per-event message lookup in §5 is not this), in-app chat, document generation.
 
 ## **Phase 1.5: validity and renewal**
 
@@ -735,6 +863,8 @@ Stop, or change the wedge, when:
 ## **Change**
 
 * Add structured answers as a core action type  
+* Add a requester-facing notification system (in-app feed \+ per-case Notifications tab), kept explicitly separate from the recipient-facing reminder engine — event-driven, not schedule-driven  
+* Add on-demand manual messaging, per-event custom message templates, and an `@`/`#` variable-mention system, all bounded as a lookup rather than a rules engine — and account for WhatsApp/SMS's pre-approved-template constraint from day one rather than discovering it once "Send now" is built  
 * Separate fulfilment, review, delivery, validity, and signature states into independent axes  
 * Model assignment separately from requirement  
 * Model document validity against a subject, not a request item  

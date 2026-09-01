@@ -8,7 +8,7 @@ just written. `[~]` means partially done; the note says what's missing.
 
 Legend: `[ ]` not started · `[~]` in progress / partial · `[x]` done & verified
 
-Last updated: 2026-08-30 (`/templates/new` card layout redesigned again — Required is now a real M3 Switch at the bottom-right of the card, action type moved below the title, remove button moved to the top-right corner — per explicit follow-up feedback; verified with the full typecheck/lint/vitest/build/Playwright gate)
+Last updated: 2026-09-01 (product.md: added on-demand "Send now" messaging, per-event `MessageTemplate` custom copy, a bounded conditional-messaging lookup, and the `@`/`#` mention system to the "Notification and reminder model" — documentation only, nothing built yet; tracked as a roadmap seam below)
 
 ---
 
@@ -243,6 +243,7 @@ Last updated: 2026-08-30 (`/templates/new` card layout redesigned again — Requ
 - [x] Aadhaar: no column anywhere accepts a raw government ID; architectural rule documented in the plan — nothing to build until Phase 2's CCA-provider integration
 - [x] AI extraction: seam is `submission_version` immutability + `file_asset.sha256_hash`; no `extraction` table yet (add when this feature is actually scheduled)
 - [x] Conditional logic: `requirement_definition.visibility_condition` (jsonb, nullable) exists, unevaluated
+- [ ] Requester-facing notifications: `NotificationPreference`, `Notification`, `MessageTemplate` entities, `reminder_dispatch.trigger_type`, the per-case Notifications tab (Sent/Scheduled/Send now), and the `@`/`#` mention system — all specified in product.md's "Notification and reminder model" (§5), none built yet. Targeted for Phase 1b. WhatsApp/SMS template-approval (Meta review, India DLT registration) is a real-world lead-time dependency for two of the three channels and should start well before Phase 1b needs it.
 - [ ] Payments: no tables yet — deliberately deferred, bounded context, not started
 - [x] Integrations: `audit_event` is the append-only stream future webhooks will read; no consumer built yet
 
