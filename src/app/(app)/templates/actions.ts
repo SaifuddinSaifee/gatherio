@@ -53,6 +53,52 @@ export async function createTemplateWithRequirementsAction(
   }
 }
 
+export interface UpdateTemplateInput {
+  templateId: string;
+  versionId: string;
+  name: string;
+  requirements: RequirementDefinitionInput[];
+}
+
+/**
+ * The save path for the /edit page's builder UI — same shape as
+ * createTemplateWithRequirementsAction (called directly, not bound to a
+ * <form action>, error returned rather than redirected so in-progress
+ * rows survive a failed save).
+ */
+export async function updateTemplateWithRequirementsAction(
+  input: UpdateTemplateInput,
+): Promise<{ templateId: string } | { error: string }> {
+  const session = await getCurrentSession();
+  if (!session) return { error: 'Your session has expired. Please sign in again.' };
+  if (!requireRole(session, 'owner')) {
+    return { error: 'Only the workspace owner can edit templates.' };
+  }
+
+  const name = input.name.trim();
+  if (!name) return { error: 'Template name is required.' };
+
+  const requirements = input.requirements.map((r) => ({ ...r, title: r.title.trim() }));
+  if (requirements.length === 0) return { error: 'Add at least one requirement.' };
+  const missingTitleIndex = requirements.findIndex((r) => !r.title);
+  if (missingTitleIndex !== -1) {
+    return { error: `Requirement ${missingTitleIndex + 1} needs a title.` };
+  }
+
+  try {
+    await templates.updateTemplateWithRequirements(
+      session.workspaceId,
+      input.templateId,
+      input.versionId,
+      name,
+      requirements,
+    );
+    return { templateId: input.templateId };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Could not save template.' };
+  }
+}
+
 export async function setTemplateArchivedAction(formData: FormData): Promise<void> {
   const session = await requireSession();
   const templateId = String(formData.get('templateId') ?? '');

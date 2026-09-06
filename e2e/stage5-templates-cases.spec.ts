@@ -57,11 +57,13 @@ test('template lifecycle: draft, add requirements, publish, instantiate a case, 
   await expect(page.getByText('Any new subcontractors?')).toBeVisible();
   await expect(page.getByText('(optional)', { exact: true })).toBeVisible();
 
-  // Publish. Draft-only controls (Edit links, Add-requirement form) must disappear.
+  // Publish. Draft-only controls (per-requirement Edit links) must
+  // disappear — "Edit template" (owner-only, not draft-gated) is
+  // matched with an exact name so it doesn't get swept up here.
   await page.click('button:has-text("Publish")');
   await expect(page.getByText('Published', { exact: true })).toBeVisible();
   await expect(page.getByText('This version is published and immutable.')).toBeVisible();
-  await expect(page.locator('a:has-text("Edit")')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
 
   const templateUrl = page.url();
 
@@ -93,7 +95,7 @@ test('template lifecycle: draft, add requirements, publish, instantiate a case, 
   await page.goto(templateUrl);
   await page.click('button:has-text("Create new draft version")');
   await expect(page.getByText('Draft', { exact: true })).toBeVisible();
-  await page.locator('a:has-text("Edit")').first().click();
+  await page.getByRole('link', { name: 'Edit', exact: true }).first().click();
   await page.click('button:has-text("Delete requirement")');
   await page.waitForURL(templateUrl);
 

@@ -207,6 +207,51 @@ export async function createDraftFromLatest(workspaceId: WorkspaceId, templateId
   });
 }
 
+/**
+ * The save path for the template-level edit page (same replace-the-whole-
+ * set mental model as `createTemplateWithRequirements`, since that page
+ * reuses the /new builder UI, which never tracks per-row database ids).
+ * Only ever touches a draft version — never a published one — so
+ * replacing definition rows wholesale can't strand an id a live case
+ * depends on.
+ */
+export async function updateTemplateWithRequirements(
+  workspaceId: WorkspaceId,
+  templateId: string,
+  versionId: string,
+  name: string,
+  requirements: RequirementDefinitionInput[],
+) {
+  if (requirements.length === 0) {
+    throw new Error('A template needs at least one requirement.');
+  }
+  await assertDraft(workspaceId, versionId);
+
+  const s = scoped(workspaceId);
+  return s.db.transaction(async (tx) => {
+    await tx
+      .update(schema.workflowTemplate)
+      .set({ name, updatedAt: new Date() })
+      .where(s.where(schema.workflowTemplate.workspaceId, eq(schema.workflowTemplate.id, templateId)));
+
+    await tx
+      .delete(schema.requirementDefinition)
+      .where(
+        s.where(
+          schema.requirementDefinition.workspaceId,
+          eq(schema.requirementDefinition.templateVersionId, versionId),
+        ),
+      );
+
+    const definitions = await tx
+      .insert(schema.requirementDefinition)
+      .values(requirements.map((r) => ({ workspaceId, templateVersionId: versionId, ...r })))
+      .returning();
+
+    return { definitions };
+  });
+}
+
 async function assertDraft(workspaceId: WorkspaceId, versionId: string) {
   const version = await getVersion(workspaceId, versionId);
   if (!version) throw new Error('Version not found.');

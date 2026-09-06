@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
-  MdAdd,
   MdArchive,
   MdArrowBack,
   MdCheckCircle,
@@ -15,20 +14,13 @@ import {
   MdUpload,
 } from 'react-icons/md';
 import type { IconType } from 'react-icons';
-import { getCurrentSession } from '@/db/session';
+import { getCurrentSession, requireRole } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import { getTemplate, getLatestVersion, listRequirementDefinitions } from '@/lib/domain/template';
 import { AppHeader } from '@/components/app-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TextField } from '@/components/ui/text-field';
-import { Select } from '@/components/ui/select';
-import {
-  setTemplateArchivedAction,
-  publishVersionAction,
-  createDraftVersionAction,
-  addRequirementDefinitionAction,
-} from '../actions';
+import { setTemplateArchivedAction, publishVersionAction, createDraftVersionAction } from '../actions';
 
 const ACTION_TYPE_LABEL: Record<string, string> = {
   upload: 'Upload',
@@ -85,18 +77,28 @@ export default async function TemplateDetailPage({
 
         <div className="mt-2 flex items-center justify-between">
           <h1 className="text-headline-small font-medium text-md-on-surface">{template.name}</h1>
-          <form action={setTemplateArchivedAction}>
-            <input type="hidden" name="templateId" value={template.id} />
-            <input type="hidden" name="archived" value={template.archivedAt ? 'false' : 'true'} />
-            <Button type="submit" variant="text">
-              {template.archivedAt ? (
-                <MdUnarchive aria-hidden="true" className="h-4.5 w-4.5" />
-              ) : (
-                <MdArchive aria-hidden="true" className="h-4.5 w-4.5" />
-              )}
-              {template.archivedAt ? 'Unarchive' : 'Archive'}
-            </Button>
-          </form>
+          <div className="flex items-center gap-2">
+            {requireRole(session, 'owner') && (
+              <Link href={`/templates/${template.id}/edit`}>
+                <Button variant="text">
+                  <MdEdit aria-hidden="true" className="h-4.5 w-4.5" />
+                  Edit template
+                </Button>
+              </Link>
+            )}
+            <form action={setTemplateArchivedAction}>
+              <input type="hidden" name="templateId" value={template.id} />
+              <input type="hidden" name="archived" value={template.archivedAt ? 'false' : 'true'} />
+              <Button type="submit" variant="text">
+                {template.archivedAt ? (
+                  <MdUnarchive aria-hidden="true" className="h-4.5 w-4.5" />
+                ) : (
+                  <MdArchive aria-hidden="true" className="h-4.5 w-4.5" />
+                )}
+                {template.archivedAt ? 'Unarchive' : 'Archive'}
+              </Button>
+            </form>
+          </div>
         </div>
 
         {error && (
@@ -197,60 +199,7 @@ export default async function TemplateDetailPage({
           </ul>
         )}
 
-        {isDraft ? (
-          <Card className="mt-6">
-            <h3 className="text-title-medium text-md-on-surface">Add a requirement</h3>
-            <form action={addRequirementDefinitionAction} className="mt-4 flex flex-col gap-4">
-              <input type="hidden" name="templateId" value={template.id} />
-              <input type="hidden" name="versionId" value={version!.id} />
-              <TextField label="Title" name="title" required />
-              <TextField label="Instructions (optional)" name="instructions" />
-              <Select label="Action type" name="actionType" defaultValue="upload">
-                <option value="upload">Upload</option>
-                <option value="answer">Answer</option>
-                <option value="acknowledge">Acknowledge</option>
-              </Select>
-              <Select
-                label="Answer type (only used when action type is Answer)"
-                name="answerFieldType"
-                defaultValue="short_text"
-              >
-                <option value="short_text">Short text</option>
-                <option value="long_text">Long text</option>
-                <option value="date">Date</option>
-                <option value="choice">Choice</option>
-                <option value="yes_no">Yes/No</option>
-              </Select>
-              <Select label="Sensitivity" name="sensitivity" defaultValue="general">
-                <option value="general">General</option>
-                <option value="routine_business">Routine business</option>
-                <option value="tax_identity">Tax / identity</option>
-                <option value="banking">Banking</option>
-                <option value="high_value_agreement">High-value agreement</option>
-              </Select>
-              <TextField
-                label="Sequence"
-                name="sequence"
-                type="number"
-                defaultValue={definitions.length}
-              />
-              <TextField label="Acceptance criteria (optional)" name="acceptanceCriteria" />
-              <label className="flex items-center gap-2 text-body-medium text-md-on-surface">
-                <input
-                  type="checkbox"
-                  name="required"
-                  defaultChecked
-                  className="h-4 w-4 accent-md-primary"
-                />
-                Required
-              </label>
-              <Button type="submit" variant="filled" className="mt-2">
-                <MdAdd aria-hidden="true" className="h-4.5 w-4.5" />
-                Add requirement
-              </Button>
-            </form>
-          </Card>
-        ) : (
+        {!isDraft && (
           <p className="mt-6 text-body-small text-md-on-surface-variant">
             This version is published and immutable. Create a new draft version to make changes.
           </p>
