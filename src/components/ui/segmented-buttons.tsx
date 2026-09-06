@@ -60,7 +60,7 @@ export function SegmentedButtons<T extends string>({
             aria-checked={selected}
             onClick={() => onChange(option.value)}
             className={cn(
-              'group relative flex flex-1 items-center justify-center gap-1.5 border-y border-l border-md-outline px-4 text-label-large outline-none first:rounded-l-full last:rounded-r-full last:border-r focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2',
+              'group relative flex flex-1 cursor-pointer items-center justify-center gap-1.5 border-y border-l border-md-outline px-4 text-label-large outline-none first:rounded-l-full last:rounded-r-full last:border-r focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2',
               selected
                 ? 'bg-md-secondary-container text-md-on-secondary-container'
                 : 'bg-transparent text-md-on-surface',

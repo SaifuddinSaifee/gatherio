@@ -673,6 +673,14 @@ Example:
 
 Component tokens may override these.
 
+## Cursor Affordance (Mandatory)
+
+Every element a user can click or otherwise activate by mouse must show the corresponding cursor. This is not a Material-specific nuance — it's baseline web usability, and a click handler working correctly does not make it true automatically. Native `<button>` and `<select>` elements render the default arrow cursor in most browsers unless `cursor-pointer` is applied explicitly; a control that is functional but looks static on hover reads as broken to a user, not merely unpolished.
+
+- Any interactive element — `<button>`, a custom `role="button"`/`role="radio"`/`role="switch"` control, a clickable card, a tab, a chip — gets `cursor-pointer` in its enabled state. This applies uniformly across every button variant and every custom interactive control, with no exceptions for "it's obviously clickable already."
+- A disabled element gets `cursor-not-allowed` (§10), never `cursor-pointer` — a control that cannot be activated must not visually invite a click.
+- Non-interactive elements (plain text, decorative containers, static cards per §36) keep the default `cursor: auto`. Adding `cursor-pointer` to something that does not respond to a click is exactly as misleading as omitting it from something that does.
+
 ---
 
 # 10. Disabled States
@@ -2871,6 +2879,7 @@ Do not confuse these brand decisions with requirements imposed by Material Desig
 ## Interaction
 
 - [ ] State layers used correctly
+- [ ] Every interactive element shows `cursor-pointer`; disabled elements show `cursor-not-allowed`, never `cursor-pointer`
 - [ ] Hover does not replace underlying semantic color incorrectly
 - [ ] Visible keyboard focus exists
 - [ ] Press feedback is not universally `scale-95`

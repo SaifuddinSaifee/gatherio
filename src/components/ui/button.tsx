@@ -56,7 +56,7 @@ export function Button({
   return (
     <button
       className={cn(
-        'group relative inline-flex h-10 items-center justify-center gap-2 rounded-full px-6 text-label-large font-medium transition-shadow duration-(--duration-effects-default) ease-md-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:bg-md-on-surface/12 disabled:text-md-on-surface/38 disabled:shadow-elevation-0',
+        'group relative inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-full px-6 text-label-large font-medium transition-shadow duration-(--duration-effects-default) ease-md-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-md-on-surface/12 disabled:text-md-on-surface/38 disabled:shadow-elevation-0',
         fullWidth && 'w-full',
         styles.container,
         styles.elevation,

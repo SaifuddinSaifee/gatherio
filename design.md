@@ -259,6 +259,8 @@ Material You uses **elevation** through subtle shadows combined with tonal surfa
 
 Material You buttons are **pill-shaped** and use a state layer system.
 
+**Cursor (mandatory, all variants)**: every button — Filled, Tonal, Outlined, Text, and FAB alike — must show `cursor-pointer` on hover while enabled, and `cursor-not-allowed` while disabled. This is not optional polish: unstyled `<button>` elements render the default arrow cursor in most browsers, not a pointer/hand cursor, so this must be applied explicitly rather than assumed. See **Interactive States** below for the general rule this follows from.
+
 **Variants**:
 
 1. **Filled (Primary)**:
@@ -368,6 +370,12 @@ Material You buttons are **pill-shaped** and use a state layer system.
 - Label: Placeholder uses `text-md-on-background/50`
 
 ### Interactive States
+
+**Cursor (Mandatory — applies to every clickable/interactable element, not just buttons)**:
+
+- Anything a user can click, toggle, or otherwise activate with a mouse — buttons, custom toggle/switch/radio controls, clickable cards, tabs, chips, icon buttons — must show `cursor-pointer` while enabled. This is basic usability, not a stylistic flourish, and browsers do not give it to you for free: a plain `<button>` renders the default arrow cursor in most browsers unless `cursor-pointer` is applied.
+- Disabled interactive elements show `cursor-not-allowed` (see Disabled States below), never `cursor-pointer` — a control that cannot be activated should not visually invite a click.
+- Non-interactive elements (static text, decorative shapes, non-clickable cards) keep the default cursor. Do not add `cursor-pointer` to something that doesn't respond to a click — that is exactly as misleading as leaving it off something that does.
 
 **State Layer System** (Key Material You Concept):
 Instead of changing the base color, overlay a semi-transparent layer:
@@ -489,6 +497,7 @@ These signature elements MUST be present to achieve authentic Material You aesth
 - ❌ Flatten inputs - use the distinctive filled text field style with bottom border
 - ❌ Create harsh geometric patterns - shapes should feel organic, soft, flowing
 - ❌ Rely on borders for container separation - use tonal backgrounds instead
+- ❌ Leave a clickable or interactable element on the default arrow cursor - every button, toggle, and clickable card needs `cursor-pointer` (and `cursor-not-allowed` when disabled); this is mandatory, not optional polish
 
 **Common Mistakes**:
 
@@ -595,6 +604,7 @@ To ensure full Material You compliance with enhanced depth and interactivity:
 - [ ] Large border radii on major containers (32-48px)
 - [ ] Inputs use filled text field style (rounded top, border bottom)
 - [ ] Focus rings on all interactive elements
+- [ ] Every clickable/interactable element shows `cursor-pointer` (disabled elements show `cursor-not-allowed`) — mandatory, not optional
 - [ ] Generous spacing and padding throughout
 
 **Enhanced Implementation**:
