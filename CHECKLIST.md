@@ -8,7 +8,7 @@ just written. `[~]` means partially done; the note says what's missing.
 
 Legend: `[ ]` not started · `[~]` in progress / partial · `[x]` done & verified
 
-Last updated: 2026-09-01 (product.md: added on-demand "Send now" messaging, per-event `MessageTemplate` custom copy, a bounded conditional-messaging lookup, and the `@`/`#` mention system to the "Notification and reminder model" — documentation only, nothing built yet; tracked as a roadmap seam below)
+Last updated: 2026-09-06 (fixed a real bug: `db:migrate`/`db:seed`/`db:reset`/`worker` all crashed on a missing `DATABASE_URL` in a fresh shell because `tsx` doesn't auto-load `.env` the way `next dev` does — added `--env-file=.env` to those scripts; see Stage 1)
 
 ---
 
@@ -23,6 +23,8 @@ Last updated: 2026-09-01 (product.md: added on-demand "Send now" messaging, per-
 - [x] Directory shape created: `app/(app)`, `app/r/[token]`, `app/api`, `db/schema`, `lib/adapters`, `lib/domain`, `worker/jobs`, `components/ui`
 - [x] Process split: `next dev` (web) and `pnpm worker` (background jobs) read the same env
 - [x] Verified: `pnpm dev` boots, home page (`/`) renders
+
+**2026-09-06 — real bug found and fixed: every `db:*` script and the worker crashed with a Zod "DATABASE_URL required" error despite a correctly populated `.env`.** Root cause: `next dev` auto-loads `.env`/`.env.local` internally, but the `db:migrate`/`db:seed`/`db:reset`/`worker` scripts are plain `tsx src/....ts` invocations — tsx does not load any `.env` file on its own, so `src/lib/env.ts`'s `process.env` read saw nothing outside of Next.js. This had been masked so far by always having the vars already exported in the shell during earlier stages' verification; it reproduces on any fresh shell/clone, which is exactly how it was caught. `db:generate`/`db:studio` were unaffected because `drizzle-kit`'s own CLI has built-in `.env` loading. Fixed by adding Node 22's native `--env-file=.env` flag to the `db:migrate`, `db:seed`, `db:reset`, `worker`, and `worker:start` scripts in `package.json` — no new dependency (no `dotenv` package), since Node 20.6+ supports this natively and `tsx` passes the flag through. Verified by running all three (`db:reset` → `db:migrate` → `db:seed`) end to end in a fresh shell with no vars pre-exported.
 
 ## Stage 2 — Schema and tenant isolation
 
