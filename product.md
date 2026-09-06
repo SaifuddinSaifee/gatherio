@@ -279,9 +279,10 @@ The disadvantages matter more: low urgency, low willingness to pay, high churn, 
 
 ## **Recommended hierarchy**
 
-Workspace / Organization  
-└── WorkflowTemplate (versioned)  
-    └── RequirementDefinition
+Organization (enterprise only, dormant at launch)  
+└── Workspace (the isolation boundary — every table carries `workspace_id`)  
+    └── WorkflowTemplate (versioned)  
+        └── RequirementDefinition
 
 Case / Packet  
 ├── Party / Recipient  
@@ -298,13 +299,19 @@ Case / Packet
 
 ## **Core entities**
 
-**Workspace**: the paying organization. `id, name, billing_plan, retention_policy, default_authentication_policy`
+**Workspace**: the tenant and isolation boundary. `id, organization_id (nullable), name, billing_plan, retention_policy, default_authentication_policy, require_separate_reviewer, admin_implicit_content_access`
 
-**User**: an authenticated internal user. `id, workspace_id, role, email`
+**Organization**: the enterprise parent — subscription, seats, SSO, central template library. `id, name, billing_plan, seat_count, sso_config`. Ships empty; see "Roles, tenancy, and access control" below.
 
-**WorkflowTemplate**: a reusable definition such as "Monthly Bookkeeping Close" or "Vendor Onboarding." `id, workspace_id, name, version, status`
+**User**: an authenticated internal user. `id, email` — note that role does **not** live here. A user can belong to several workspaces with a different role in each, so the role belongs on the membership.
 
-**Case / Packet**: one live instance, such as "Q2 Close: Acme Traders." `id, workspace_id, template_version_id, name, overall_status, due_at, created_by, completed_at`
+**WorkspaceMember**: the user's role in one workspace. `id, workspace_id, user_id, role (owner|admin|manager|contributor|viewer), capabilities (nullable overlay), status, invited_by`. Exactly one `owner` per workspace, enforced by a partial unique index.
+
+**CaseGrant**: per-case content access for a `restricted` case. `id, workspace_id, case_id, user_id, granted_by, granted_at, revoked_at, reason, source (explicit|break_glass)`
+
+**WorkflowTemplate**: a reusable definition such as "Monthly Bookkeeping Close" or "Vendor Onboarding." `id, workspace_id, name, version, status, default_access_mode`
+
+**Case / Packet**: one live instance, such as "Q2 Close: Acme Traders." `id, workspace_id, template_version_id, name, overall_status, due_at, created_by, completed_at, access_mode (workspace|restricted, snapshotted from the template)`
 
 **Party**: an external person or organization. `id, case_id, party_type, display_name, email, phone, organization_name, ledger_subject_id`
 
@@ -358,10 +365,10 @@ Two systems, one shared delivery layer, two different audiences, two different t
 
 Nothing new is added to the engine itself; this only makes explicit how policy applies across the hierarchy:
 
-- **Template-level default.** `WorkflowTemplate` carries a default `ReminderPolicy` (cadence, channels, quiet hours). Every case instantiated from that template inherits it at creation time — the same snapshot-then-independent posture already used for requirement definitions: editing a template's default policy later never reaches back into a live case.
-- **Case-level override.** A requester can tighten or loosen cadence for one specific case — a chronically slow client gets a tighter cadence — without touching the template.
-- **Never a push channel.** Recipients never install anything and never hold an account (§3.1), so push is structurally unavailable to them. Only email, SMS, and WhatsApp apply.
-- **Idempotency and quiet hours** are unchanged from Stage 8 of the build plan: one `reminder_dispatch` row per `(assignment_id, reminder_sequence)`, respected in the workspace's own timezone.
+* **Template-level default.** `WorkflowTemplate` carries a default `ReminderPolicy` (cadence, channels, quiet hours). Every case instantiated from that template inherits it at creation time — the same snapshot-then-independent posture already used for requirement definitions: editing a template's default policy later never reaches back into a live case.
+* **Case-level override.** A requester can tighten or loosen cadence for one specific case — a chronically slow client gets a tighter cadence — without touching the template.
+* **Never a push channel.** Recipients never install anything and never hold an account (§3.1), so push is structurally unavailable to them. Only email, SMS, and WhatsApp apply.
+* **Idempotency and quiet hours** are unchanged from Stage 8 of the build plan: one `reminder_dispatch` row per `(assignment_id, reminder_sequence)`, respected in the workspace's own timezone.
 
 ### Requester notifications — the actual gap
 
@@ -389,18 +396,18 @@ The "reminder sent" row is off by default on purpose. It's the one place a naive
 
 **Channels, concretely:**
 
-- **In-app** — always on, feeds the Notifications tab below. No new infrastructure.
-- **Email** — reuses the transactional email provider already in the architecture (§6). Per-event for Phase 1a/1b; a digest mode is a reasonable Phase 2 addition once volume justifies it.
-- **Browser/desktop push** — genuinely new infrastructure: Web Push with a service worker and VAPID keys. Not in the current adapter list (Storage, Notify, Scan, ESign) — needs its own adapter (`WebPush.subscribe / send`) following the same interfaces-first pattern as the others. Opt-in per user, per browser.
+* **In-app** — always on, feeds the Notifications tab below. No new infrastructure.
+* **Email** — reuses the transactional email provider already in the architecture (§6). Per-event for Phase 1a/1b; a digest mode is a reasonable Phase 2 addition once volume justifies it.
+* **Browser/desktop push** — genuinely new infrastructure: Web Push with a service worker and VAPID keys. Not in the current adapter list (Storage, Notify, Scan, ESign) — needs its own adapter (`WebPush.subscribe / send`) following the same interfaces-first pattern as the others. Opt-in per user, per browser.
 
 ### The Notifications tab (per case)
 
 The concrete surface the requester looks at, split into two sections so "what have we sent" and "what's coming next" are never conflated:
 
-- **Sent** — every reminder actually dispatched to the recipient, read directly off `reminder_dispatch` / `DeliveryAttempt`: timestamp, channel, delivery status (queued, sent, delivered, bounced). A read view, not a new data source.
-- **Scheduled** — the next reminder time, computed from the case's `ReminderPolicy` cadence, the last dispatch, and whether `stop_condition` has already been met. If nothing further is scheduled — the recipient already submitted, or the policy's stop condition was reached — the tab says so explicitly ("No further reminders scheduled") rather than showing an empty list, which would be indistinguishable from a load failure.
-- **Send now** — a composer for an immediate, manual message outside the automatic cadence entirely. See the next subsection for what this can and can't do per channel.
-- The same feed also surfaces that case's requester-facing events from the taxonomy above (due date passed, review needed), visually distinguished from the "Sent" entries so the requester never confuses "a reminder went to the vendor" with "something happened that needs my attention."
+* **Sent** — every reminder actually dispatched to the recipient, read directly off `reminder_dispatch` / `DeliveryAttempt`: timestamp, channel, delivery status (queued, sent, delivered, bounced). A read view, not a new data source.
+* **Scheduled** — the next reminder time, computed from the case's `ReminderPolicy` cadence, the last dispatch, and whether `stop_condition` has already been met. If nothing further is scheduled — the recipient already submitted, or the policy's stop condition was reached — the tab says so explicitly ("No further reminders scheduled") rather than showing an empty list, which would be indistinguishable from a load failure.
+* **Send now** — a composer for an immediate, manual message outside the automatic cadence entirely. See the next subsection for what this can and can't do per channel.
+* The same feed also surfaces that case's requester-facing events from the taxonomy above (due date passed, review needed), visually distinguished from the "Sent" entries so the requester never confuses "a reminder went to the vendor" with "something happened that needs my attention."
 
 ### On-demand messaging — "Send now"
 
@@ -438,8 +445,8 @@ The mechanism that makes the two features above actually usable — and, not inc
 
 Two reference namespaces, resolved by stable id rather than by text match so a later rename doesn't silently break an existing message:
 
-- **`@`** — the recipient: `@party.name`, `@party.email`, `@party.phone`, `@party.organization_name`, all existing columns on `Party`. A second, distinct token, `@me.name`, reaches the requester's own name for sign-offs ("regards, @me.name") — kept separate from `@party.*` rather than overloading `@` for both audiences, so an author is never unsure which person a given mention resolves to.
-- **`#`** — a requirement within the same template or case, by title: `#insurance-certificate`. Stored as `{{requirement:<id>}}`, not as the literal text "insurance-certificate," so renaming the requirement later updates every message that references it automatically.
+* **`@`** — the recipient: `@party.name`, `@party.email`, `@party.phone`, `@party.organization_name`, all existing columns on `Party`. A second, distinct token, `@me.name`, reaches the requester's own name for sign-offs ("regards, @me.name") — kept separate from `@party.*` rather than overloading `@` for both audiences, so an author is never unsure which person a given mention resolves to.
+* **`#`** — a requirement within the same template or case, by title: `#insurance-certificate`. Stored as `{{requirement:<id>}}`, not as the literal text "insurance-certificate," so renaming the requirement later updates every message that references it automatically.
 
 Authoring UX: typing `@` or `#` opens an autocomplete list — the standard mention-picker pattern (Slack, Notion, GitHub all do this; not a novel interaction to design). At the **template** level the list is that template's own requirement definitions and the generic party-field placeholders (no live party exists yet, so `@party.name` shows as the token itself, not a resolved value). At the **case** level — specifically the "Send now" composer — the list is that case's actual live party and requirements, and can show a live preview of the resolved text before sending.
 
@@ -447,21 +454,124 @@ Authoring UX: typing `@` or `#` opens an autocomplete list — the standard ment
 
 ### What this adds to the entity list above
 
-- `ReminderPolicy` gains `notify_requester_on_send: boolean` (default `false`) — the switch behind the one non-default row in the taxonomy table.
-- `WorkflowTemplate` gains a default `ReminderPolicy` reference, inherited by cases at instantiation, mirroring how requirement definitions already snapshot into a case.
-- Two new entities: `NotificationPreference` and `Notification`, both defined above.
-- A third new entity: `MessageTemplate` (above) — carries actual message copy, inherited from template to case the same way `ReminderPolicy` is, optionally scoped to a single requirement for the conditional-messaging case.
-- `reminder_dispatch` gains `trigger_type: scheduled | manual | conditional`, so manual and event-triggered sends never collide with the automated cadence's idempotency constraint.
+* `ReminderPolicy` gains `notify_requester_on_send: boolean` (default `false`) — the switch behind the one non-default row in the taxonomy table.
+* `WorkflowTemplate` gains a default `ReminderPolicy` reference, inherited by cases at instantiation, mirroring how requirement definitions already snapshot into a case.
+* Two new entities: `NotificationPreference` and `Notification`, both defined above.
+* A third new entity: `MessageTemplate` (above) — carries actual message copy, inherited from template to case the same way `ReminderPolicy` is, optionally scoped to a single requirement for the conditional-messaging case.
+* `reminder_dispatch` gains `trigger_type: scheduled | manual | conditional`, so manual and event-triggered sends never collide with the automated cadence's idempotency constraint.
 
 ### Sequencing
 
 This is schema-touching, so where it lands matters:
 
-- **Recipient reminders** (the existing `ReminderPolicy` engine) stay exactly where §10 already puts them — Phase 1a, since the unopened/stalled distinction is load-bearing for the core thesis.
-- **Requester notification center** (in-app feed, Notifications tab, email channel, `NotificationPreference`) belongs in **Phase 1b** — "before charging beyond pilots" is exactly when a requester running a real case stops tolerating a dashboard they have to remember to check.
-- **On-demand "Send now," `MessageTemplate`, per-event message overrides, and the `@`/`#` mention system** all belong in **Phase 1b** alongside the notification center — same surface (the Notifications tab), same underlying entities, no new infrastructure beyond the `Notify` adapter already planned.
-- **WhatsApp and SMS template approval is an operational dependency, not a build task.** Meta's WhatsApp template review and India's DLT SMS registration both take real calendar time and happen outside this codebase entirely. Start that process before Phase 1b needs it, not when it's already blocking a release — email needs none of this and can ship first regardless.
-- **Browser/desktop push** is **Phase 2 or later** — new infrastructure (a Web Push adapter) that doesn't touch the completion-engine thesis actually being tested in the pilots, so building it early would be the same kind of scope creep §10 already warns against elsewhere.
+* **Recipient reminders** (the existing `ReminderPolicy` engine) stay exactly where §10 already puts them — Phase 1a, since the unopened/stalled distinction is load-bearing for the core thesis.
+* **Requester notification center** (in-app feed, Notifications tab, email channel, `NotificationPreference`) belongs in **Phase 1b** — "before charging beyond pilots" is exactly when a requester running a real case stops tolerating a dashboard they have to remember to check.
+* **On-demand "Send now," `MessageTemplate`, per-event message overrides, and the `@`/`#` mention system** all belong in **Phase 1b** alongside the notification center — same surface (the Notifications tab), same underlying entities, no new infrastructure beyond the `Notify` adapter already planned.
+* **WhatsApp and SMS template approval is an operational dependency, not a build task.** Meta's WhatsApp template review and India's DLT SMS registration both take real calendar time and happen outside this codebase entirely. Start that process before Phase 1b needs it, not when it's already blocking a release — email needs none of this and can ship first regardless.
+* **Browser/desktop push** is **Phase 2 or later** — new infrastructure (a Web Push adapter) that doesn't touch the completion-engine thesis actually being tested in the pilots, so building it early would be the same kind of scope creep §10 already warns against elsewhere.
+
+## **Roles, tenancy, and access control**
+
+Three separate questions that get conflated into one "permissions" feature and must not be: **who can do what** (roles), **which data is walled off from which** (tenancy), and **who may open a specific case's contents** (access control). Each has a different answer and a different shape. The full reasoning, alternatives considered, and diagrams live in [roles-and-tenancy.md](roles-and-tenancy.md); this section records the decisions and the entities they add.
+
+### The role ladder
+
+Five roles, strictly nested — every rung is a superset of the one below. Non-nested permissions are the thing that forces a UI to explain a Venn diagram, so anything that doesn't nest goes into the capability overlay or the case ACL instead.
+
+| Role | The line it sits above |
+| ----- | ----- |
+| **Owner** | Billing, seats, plan, delete workspace, transfer ownership. **Exactly one per workspace**, enforced by a DB constraint. |
+| **Admin** | Security and compliance policy — retention, default auth level, residency, SSO — plus integrations, API keys, webhooks. Full people management. |
+| **Manager** | People management: invite, remove, change roles. Full case and template work. Cannot change the rules the workspace operates under. |
+| **Contributor** | All case and template work, including review. No settings, no people management. |
+| **Viewer** | Read-only: sees that a case exists and how far along it is. Cannot act, cannot reach a recipient, and by default cannot read case contents. |
+
+The cut between Admin and Manager is the one worth naming precisely, because "two kinds of admin" is otherwise unexplainable in a dropdown: **can you change the rules the workspace operates under, or only operate within them?**
+
+Three rules that the table doesn't capture and that cause real incidents when missing:
+
+* **Grant ceiling.** A member may only assign a role at or below their own. Without this, "invite members" plus "change roles" is a one-click privilege-escalation path to Admin and the ladder is decorative.
+* **Ownership transfer is atomic and mandatory.** The old owner demotes to Admin in the same transaction the new owner is promoted, and an owner cannot delete their account or leave until they transfer. A half-completed transfer produces a zero-owner workspace, which is unrecoverable without a support script.
+* **Removing a member never deletes their work.** `case.created_by` must survive offboarding — deactivate the membership, never cascade.
+
+**Roles are never a paywall.** Every role is available on every plan; see §11 for how seats and packets divide the pricing job between them. Gating a role behind a tier means demoting existing users when they downgrade, which is the worst kind of packaging change to discover after launch.
+
+**Two roles that deliberately do not exist.** There is no "super admin" — the name stays unused, partly because in most SaaS it means the vendor's own staff. And there is no role for Gather's own support staff; if that is ever genuinely needed it gets designed then, as its own heavily-audited thing, rather than smuggled into the customer's ladder.
+
+### What sits beside the ladder, not on it
+
+Two capabilities resist rank, and forcing them onto it is how a five-role model becomes a nine-role model within a year:
+
+* **Review authority.** In an accounting practice the senior partner approves documents and administers nothing. In a bank, the person who created the case and chased the vendor must frequently *not* be the person who accepts the submission — maker–checker, and an audit finding if it can't be demonstrated. Neither shape is expressible on a rank ladder. Contributors may review **by default**; a workspace flag `require_separate_reviewer` enforces separation by rejecting `review.reviewed_by == case.created_by`.
+* **Content access.** See below. It's per-case, not per-role.
+
+Both are carried by a nullable `capabilities` overlay on the membership row, where `null` means "role defaults apply."
+
+**One important non-role: the recipient.** Parties are outside this model entirely — no user row, no membership, no role. Their authorisation is the `access_token` plus the §4.7 auth ladder. "What role does the vendor have?" is asked by every enterprise security reviewer, and the answer — *none, structurally, by design* — is one of the better talking points available.
+
+### Case-level access control: content, never existence
+
+The decision that makes this tractable: **everyone in the workspace can see that a case exists and how far along it is. Not everyone can read what is inside it.**
+
+| Discovery layer — workspace-wide | Content layer — per-case ACL |
+| ----- | ----- |
+| Case exists, its name, its status | Submitted files |
+| Progress: 3 of 7 approved, 1 needs changes | Answer values |
+| Due date, overdue, blocked | Party name, email, phone, organization |
+| Last recipient activity | Review reasons and submission history |
+| | Packet ZIP export |
+
+The obvious alternative — restricted cases vanish from lists for people without access — turns every list query into a permission-filtered query, breaks dashboard counts, makes "why can't I find case 482?" unanswerable, and is exactly the complexity jump that gets an ACL deferred forever. Splitting discovery from content avoids all of it: **list and dashboard queries do not change at all**, `scoped()` remains the only filter, and enforcement collapses to five chokepoints — file download, answer reads, party contact reads, the export job, and review actions. That last one falls out for free: you cannot review what you cannot read.
+
+Two access modes, set on the template and snapshotted onto the case at instantiation, the same inheritance already used for requirement definitions and reminder policy:
+
+* **`workspace`** (default) — anyone eligible may read content. Right for the launch ICP: a five-person accounting practice where everyone works every client and an ACL would be friction with no threat model behind it.
+* **`restricted`** — the case creator plus explicit grants only. This is the HR case (a hiring manager must not read another candidate's file), and the bank-branch case.
+
+For a `restricted` case the discovery layer also redacts the **party display name** and the **per-requirement titles**, showing counts and statuses only. Both leak without a single file being opened — "Candidate: Priya Sharma" in a case list, or a requirement titled "Bankruptcy declaration," defeats the point. The dashboard's actual job is unaffected, because "who is blocking the close" is a party and a count, not a list of document names.
+
+**How Admins get in — break-glass, not silence.** A workspace flag `admin_implicit_content_access` defaults to `true`: Owner and Admin read restricted cases directly, which is right for a small firm. Regulated and HR customers flip it to `false`, and Admins must then grant themselves access explicitly — which writes a distinct, prominent audit event surfaced in the case's activity. The point is not "admins can't," which nobody believes; it's "admins can, and you'll know."
+
+### Tenancy: Organization → Workspace, and nothing below
+
+The **workspace is the hard isolation boundary** and remains so — every table already carries `workspace_id`, and cross-tenant reads are structurally prevented rather than remembered. An **Organization** sits above it as the enterprise parent, carrying the subscription, seats, SSO and identity, a central template library, and cross-workspace reporting.
+
+A third level — Team or Project — is **rejected**. Its cost is permission resolution: a user who is Contributor at org, Admin at workspace and Viewer at team is a real situation that must be defined, and every "most permissive wins" or "most specific wins" rule will be wrong for some customer and unexplainable in a UI. "Team" is real as an *assignment target* (a bag of users work is routed to) and "Project" as a *label or saved view*, but neither is a data boundary, and conflating grouping-for-convenience with boundary-for-isolation is the most common way a permission model rots.
+
+The heuristic that answers "one workspace per branch, or per business line?" for every customer:
+
+> **A workspace boundary is drawn wherever a document-visibility wall belongs for a whole group of cases at once. Nothing else.** Not org charts, not geography, not billing, not reporting lines. And a wall around *one* case is a `restricted` case, not a new workspace.
+
+Org-level roles are deliberately three, not a mirror of the workspace ladder: **Org Owner** (subscription, seats, SSO, workspace provisioning), **Org Admin** (central templates, org-wide policy), and **Org Auditor** (read-only across all workspaces plus full audit log — and notably *no* implicit content access, so restricted-case contents still require a grant or break-glass). Everyone else holds no org role at all, which is and should remain the common case.
+
+**Effective role = max of the implicit org role and the direct workspace role.** One merge rule, no subtraction, no most-specific-wins. A rule statable in one sentence is worth more than one that is subtle and correct.
+
+### Carry-forward across workspaces
+
+Carry-forward already exists within a workspace (§3.4, §4.3). Across workspaces inside one organization it is **an enterprise feature**, and it is two features wearing one name:
+
+* **Mode 1 — skip the ask.** The second workspace learns that a current document of that type is held elsewhere in the organization, and the requirement is satisfied without re-asking. Reveals existence and a validity window, nothing more.
+* **Mode 2 — share the document.** The second workspace can open the actual file the first collected. Reveals the document itself.
+
+**Mode 1 carries almost all of the value.** The persuasive claim in §9 — *"never re-asks for what you already hold"* — is fully satisfied by it, and the client's experience of not being asked twice is identical either way. Mode 2 only serves the requester's convenience and carries nearly all of the regulatory risk, so it requires its own explicit opt-in, off unless deliberately enabled.
+
+Both are configured **per document type, not globally** — "a GST certificate carries across branches, a customer's bank statement does not" is a sentence a compliance officer will want to write, and one org-wide switch cannot express it. `ledger_subject.workspace_id` is untouched; an org-level link table maps workspace-local subjects to a shared organization subject, consulted only in organization mode. Audit events land in **both** workspaces — the one that skipped the ask and the one whose holding was consulted. And a requirement satisfied by Mode 1 never becomes a link into the other workspace's file: opening that file is Mode 2, and Mode 2 goes through the same ACL as everything else.
+
+### What this adds to the entity list
+
+* **`Workspace`** gains `organization_id` (nullable), `require_separate_reviewer`, `admin_implicit_content_access`.
+* **`WorkspaceMember`** replaces the two-value role with the five-role ladder, and gains `capabilities` (jsonb, nullable — the overlay), `status` (active / deactivated, so offboarding never cascades), and `invited_by`. A partial unique index enforces exactly one owner per workspace.
+* **`Organization`** — new: `id, name, billing_plan, seat_count, sso_config`. Ships **empty**, with `workspace.organization_id` null everywhere, until an enterprise deal is real. The value is entirely in the migration not needed later: back-filling a parent onto live workspaces, re-parenting billing, and rewriting every permission call site simultaneously always happens under deal pressure.
+* **`WorkflowTemplate`** gains `default_access_mode`; **`Case`** gains `access_mode`, snapshotted at instantiation.
+* **`CaseGrant`** — new: `id, workspace_id, case_id, user_id, granted_by, granted_at, revoked_at, reason, source (explicit | break_glass)`.
+* **`OrgMember`** and the org-level ledger link table are specified but deliberately **not built** until an organization exists.
+
+### Sequencing for roles and access control
+
+* **Phase 1a:** the role ladder itself, the one-owner constraint, ownership transfer, and — most importantly — a single `can(session, capability, resource)` choke point that every server action routes through. That function is what turns each of the decisions above into a config change rather than a refactor; adding rungs to a codebase that checks roles inline is the expensive version of this work. The overlay and workspace-flag columns ship in the same migration, unused.
+* **Phase 1b:** role management UI, invitations, grant-ceiling enforcement, and the **case ACL** — which needs the recipient page and review loop to exist first, since there is no content to protect until uploads and reviews are real. The empty `organization` table and its nullable FK land here too, before there is data to back-fill.
+* **Phase 1.5:** reviewer-separation enforcement and break-glass audit surfacing, alongside the compliance verticals that make maker–checker a real requirement.
+* **First enterprise deal, not before:** org roles and UI, the central template library, SSO/SCIM, the org dashboard, and cross-workspace carry-forward. Roles are not what blocks that deal — the security questionnaire, SOC 2 or ISO 27001, the DPA, residency, and a three-to-six-month procurement cycle are (§8.3).
 
 ---
 
@@ -513,7 +623,7 @@ Because users will upload tax forms, identity documents, contracts, and financia
 * Backup and restore procedures  
 * Configurable retention and deletion  
 * Privacy and data-processing documentation, subprocessor transparency  
-* Requester-side role-based access control  
+* Requester-side role-based access control — the five-role ladder, plus per-case content ACL for confidential cases, plus break-glass admin access that is always audited rather than silent (see "Roles, tenancy, and access control" in §5)  
 * Secure, expiring document download links  
 * Monitoring for unusual download activity
 
@@ -708,7 +818,7 @@ The market validation report's Phase 1 contains roughly seventeen items. That is
 
 **Phase 1a, minimum shippable (target 4 to 6 focused weeks):**
 
-* Requester organizations and users  
+* Requester workspaces and users, with the five-role ladder (owner, admin, manager, contributor, viewer), a one-owner constraint, ownership transfer, and a single `can()` permission choke point — see "Roles, tenancy, and access control" in §5  
 * Reusable workflow templates  
 * Cases and packets  
 * Upload and answer requirements (acknowledge if trivial)  
@@ -730,18 +840,22 @@ The market validation report's Phase 1 contains roughly seventeen items. That is
 * On-demand "Send now" messaging, `MessageTemplate` custom copy, per-event message overrides, and the `@`/`#` mention system (same section) — WhatsApp/SMS need provider template approval in parallel, which should start early since it isn't work this codebase controls  
 * Retention and deletion controls  
 * One storage export integration  
-* Multi-party assignment
+* Multi-party assignment  
+* Role management UI, member invitations, grant-ceiling enforcement  
+* Per-case content ACL — `access_mode`, `CaseGrant`, and enforcement at the five chokepoints (file download, answer reads, party contact reads, export job, review actions); discovery stays workspace-wide and unfiltered (§5)  
+* The empty `Organization` table and `workspace.organization_id` — shipped dormant, before there is data to back-fill
 
-**Do not build:** generic automation builder, marketplace, payments, AI extraction, dozens of integrations, persistent recipient accounts, advanced analytics, full procurement, native signing, a general conditional-logic / rules engine (the bounded per-event message lookup in §5 is not this), in-app chat, document generation.
+**Do not build:** generic automation builder, marketplace, payments, AI extraction, dozens of integrations, persistent recipient accounts, advanced analytics, full procurement, native signing, a general conditional-logic / rules engine (the bounded per-event message lookup in §5 is not this), in-app chat, document generation, organization-level UI or roles, teams as a hierarchy level, custom roles, cross-workspace carry-forward, any role for Gather's own staff.
 
 ## **Phase 1.5: validity and renewal**
 
 * Document types and the `subject_type` / `subject_id` ledger  
 * Effective and expiry dates  
 * Expiring-soon policies and responsible owners  
-* **Recurring cases with carry-forward** (skip what is already held and current)  
+* **Recurring cases with carry-forward** (skip what is already held and current) — within a workspace; the cross-workspace form is an enterprise feature, see §5  
 * Renewal requests and superseded-document history  
-* Current compliance state and expiry dashboard
+* Current compliance state and expiry dashboard  
+* Reviewer-separation enforcement (`require_separate_reviewer`) and break-glass audit surfacing — maker–checker becomes a real requirement exactly when the compliance verticals this phase targets arrive
 
 This is where the product begins earning a premium and where retention stops depending on goodwill.
 
@@ -776,12 +890,26 @@ A generic product at $49 per month would have to win on distribution or dramatic
 | ----- | ----- | ----- |
 | Starter | $99/month | 25 active vendor packets, uploads, answers, reminders, review |
 | Team | $249/month | 100 active packets, multiple users, storage export, expiry tracking |
-| Compliance | $499/month | Higher volume, detailed audit, SMS, advanced roles, retention policies, API and webhooks |
-| Enterprise | Custom | SSO, regional storage, custom controls, contractual SLA |
+| Compliance | $499/month | Higher volume, detailed audit, SMS, retention policies, API and webhooks |
+| Enterprise | Custom | Organizations and multi-workspace, SSO, cross-workspace carry-forward, regional storage, custom controls, contractual SLA |
+
+Note that "advanced roles" has been **removed** from the Compliance tier. Roles are never a paid feature — see below.
 
 **Accounting practices (launch phase):** price substantially lower and expect roughly a tenth of the revenue per customer in price-sensitive geographies. A viable structure is a low entry tier tied to active client-cases per period, with a mid tier adding multiple users and expiry tracking. Validate the exact numbers in interviews rather than assuming them.
 
-**Charge primarily by active packets, completed packets, or active external entities. Avoid seats as the primary value metric. External recipients are always free.**
+**Two units, one job each. External recipients are always free.**
+
+| Unit | What it prices | Why |
+| ----- | ----- | ----- |
+| **Active packets / completed packets / active external entities** | The **value metric** — what a tier is sized by | Scales with the work the product actually does. A customer running 200 close packets a month gets more value than one running 20, regardless of headcount. |
+| **Seats** | Internal users, per head | Makes team expansion a clean, predictable upsell, and — the actual reason — it is what allows **every role to be free on every plan**. |
+| **External recipients** | Free, always, unlimited | Non-negotiable. Charging for recipients contradicts the entire §3.1 thesis. |
+
+**Roles are never a paywall.** A seat buys a person; the customer assigns whatever role they want to it. Gating a role behind a tier means demoting existing users when they downgrade, which is the worst kind of packaging change and is unrecoverable once customers are live.
+
+This is a deliberate revision of this document's earlier position ("avoid seats as the primary value metric"). The original reasoning still holds and is preserved above: **packets remain the value metric that sizes a tier**, because value scales with cases completed rather than headcount, and pure seat pricing punishes exactly the customer you want — one who rolls the tool out widely. Seats are added as a second, secondary unit specifically so that roles and access control never become a purchasing decision.
+
+**One consequence worth pre-empting: do not charge a full seat for a Viewer.** A Viewer exists to give a partner, a compliance officer, or a manager visibility. If that costs as much as a Contributor, customers simply will not add them — and org-wide visibility is precisely what makes the product sticky and what drives expansion revenue later. A Viewer changes no state and, by default, reads no case content, so it costs almost nothing to serve. Free or heavily discounted Viewer seats, capped at some multiple of paid seats, is the recommended experiment.
 
 For Sign, include a small bundle and charge roughly $1 to $2 per completed envelope above the allowance. Provider cost stays well below that at normal volume.
 
@@ -874,6 +1002,11 @@ Stop, or change the wedge, when:
 * Treat magic links as low-friction access, never as identity proof  
 * Integrate e-signature infrastructure rather than building it  
 * Support multi-party eventually, but design the schema for it now  
+* Replace the two-value owner/member role with a five-rung, strictly nested ladder (owner, admin, manager, contributor, viewer), and route every permission check through a single `can()` function rather than inline role comparisons  
+* Separate **case discovery** from **case content** — everyone sees that a case exists and how far along it is; only granted users open what is inside it. This is what makes a per-case ACL affordable, because list and dashboard queries never become permission-filtered  
+* Keep review authority off the role ladder — it is substantive, not administrative, and regulated buyers require creator ≠ approver  
+* Add `Organization` as a dormant enterprise parent now (an empty table and a nullable FK), and reject a third hierarchy level below the workspace  
+* Make roles free on every plan and price seats alongside packets, so access control is never a purchasing decision  
 * Position around a vertical business outcome  
 * Use agencies as design partners rather than the primary market  
 * Split the Phase 1 list into a genuinely minimum shippable subset
@@ -881,6 +1014,9 @@ Stop, or change the wedge, when:
 ## **Reject**
 
 * The shared request engine as the primary moat  
+* A third tenancy level (Team or Project) below the workspace — grouping for routing is not a data boundary  
+* "Super admin" as a role name, and any role for Gather's own staff inside the customer's ladder  
+* Roles as a paid feature or an upgrade trigger  
 * "Anything from anyone" as launch positioning  
 * Channel reach as the differentiation argument  
 * Native e-signature infrastructure in the first product  

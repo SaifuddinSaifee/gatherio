@@ -8,7 +8,7 @@ just written. `[~]` means partially done; the note says what's missing.
 
 Legend: `[ ]` not started · `[~]` in progress / partial · `[x]` done & verified
 
-Last updated: 2026-09-06 (fixed a real bug: `db:migrate`/`db:seed`/`db:reset`/`worker` all crashed on a missing `DATABASE_URL` in a fresh shell because `tsx` doesn't auto-load `.env` the way `next dev` does — added `--env-file=.env` to those scripts; see Stage 1)
+Last updated: 2026-09-06 (added Stage 11 — roles, access control, and tenancy — specified in [roles-and-tenancy.md](roles-and-tenancy.md) and product.md §5, nothing built yet; plus two new roadmap seams and three new known gaps around `requireRole` and content confidentiality)
 
 ---
 
@@ -238,6 +238,39 @@ Last updated: 2026-09-06 (fixed a real bug: `db:migrate`/`db:seed`/`db:reset`/`w
 
 ---
 
+## Stage 11 — Roles, access control, and tenancy
+
+**Not started.** Specified 2026-09-06 in [roles-and-tenancy.md](roles-and-tenancy.md) and product.md §5 ("Roles, tenancy, and access control"). Listed as its own stage rather than folded into Stage 4 because it is schema-touching, it replaces an existing enum in place, and the `can()` choke point has to land before more call sites accumulate — there are already two (`requireRole` at template-archive and version-publish, Stage 5) and every new stage adds more.
+
+**Phase 1a — the ladder and the choke point:**
+
+- [ ] `can(session, capability, resource?)` in `src/lib/domain/` — the single permission choke point every server action and route handler routes through. **Replaces `requireRole` entirely**, which is not extensible to five rungs plus an overlay plus a per-case ACL.
+- [ ] `workspace_role` enum widened to `owner|admin|manager|contributor|viewer`; migration maps existing `member` → `contributor` (today's `member` has full access, so mapping it to `viewer` would silently downgrade every existing user)
+- [ ] `workspace_member` gains `capabilities` (jsonb, nullable — `null` means role defaults), `status` (`active|deactivated`, so offboarding never cascades over `case.created_by`), `invited_by`
+- [ ] Partial unique index `workspace_member(workspace_id) WHERE role = 'owner'` — a DB constraint, not application logic, because application logic loses the race
+- [ ] Ownership transfer: nominate → accept, old owner demoted to admin **in the same transaction**; owner blocked from leaving or deleting their account until transfer completes
+- [ ] Grant ceiling: a member may only assign a role at or below their own (without this, invite + change-role is a one-click escalation to admin)
+- [ ] Last-admin protection: a workspace must refuse to reach a state with nobody holding people-management capability
+- [ ] `workspace` gains `require_separate_reviewer` (default `false`) and `admin_implicit_content_access` (default `true`) — shipped in this migration, unused until Phase 1b/1.5
+- [ ] Every role change writes an `audit_event` in the same transaction as the change (existing project rule: never a background write)
+- [ ] Verify: Playwright — a manager cannot create an admin; the last admin cannot self-demote; an owner cannot delete their account; a transfer leaves exactly one owner (assert the DB row count, not just the UI)
+
+**Phase 1b — the case ACL:**
+
+- [ ] `workflow_template.default_access_mode` and `case.access_mode` (`workspace|restricted`), snapshotted at instantiation like requirement definitions already are
+- [ ] `case_grant` table: `id, workspace_id, case_id, user_id, granted_by, granted_at, revoked_at, reason, source (explicit|break_glass)`
+- [ ] Enforcement at **exactly five chokepoints** — file download route, answer-value reads, party contact reads, export ZIP job, review actions. Nowhere else: **discovery deliberately stays unfiltered**, so `listCases`/dashboard queries do not change at all and `scoped()` remains the only filter
+- [ ] `restricted` cases redact the party display name and per-requirement titles in discovery views (counts and statuses only) — both leak without a file being opened
+- [ ] Break-glass: with `admin_implicit_content_access = false`, an admin self-grant writes a distinct, prominent audit event surfaced in the case activity — never silent access
+- [ ] Denied content reads show a lock with who to ask, never a 404 — the case is known to exist (§4.4's posture: never leave someone guessing at broken state)
+- [ ] Role management UI, member invitations
+- [ ] Empty `organization` table + `workspace.organization_id` (nullable), shipped dormant
+- [ ] Verify: a Viewer sees case progress on the dashboard but gets a lock (not a 404, not a leaked filename) on every one of the five chokepoints; a `restricted` case's party name is absent from the case list markup, not merely hidden with CSS
+
+**Explicitly not in scope for either phase:** org roles or UI, central template library, SSO/SCIM, org dashboard, cross-workspace carry-forward (`org_ledger_link`), teams, custom roles, per-case `access_mode` override, billing-contact role, any role for Gather's own staff.
+
+---
+
 ## Roadmap seams (not built now, but schema/interfaces must not block them later)
 
 - [x] Signing: `signature_envelope` table exists, `sign` in `action_type` enum, `ESignAdapter` interface defined with no implementation
@@ -246,6 +279,8 @@ Last updated: 2026-09-06 (fixed a real bug: `db:migrate`/`db:seed`/`db:reset`/`w
 - [x] AI extraction: seam is `submission_version` immutability + `file_asset.sha256_hash`; no `extraction` table yet (add when this feature is actually scheduled)
 - [x] Conditional logic: `requirement_definition.visibility_condition` (jsonb, nullable) exists, unevaluated
 - [ ] Requester-facing notifications: `NotificationPreference`, `Notification`, `MessageTemplate` entities, `reminder_dispatch.trigger_type`, the per-case Notifications tab (Sent/Scheduled/Send now), and the `@`/`#` mention system — all specified in product.md's "Notification and reminder model" (§5), none built yet. Targeted for Phase 1b. WhatsApp/SMS template-approval (Meta review, India DLT registration) is a real-world lead-time dependency for two of the three channels and should start well before Phase 1b needs it.
+- [ ] **Roles and access control**: the five-rung ladder (`owner|admin|manager|contributor|viewer`), the `can()` choke point, `workspace_member.capabilities`/`status`, the one-owner partial unique index, ownership transfer, `workspace.require_separate_reviewer` / `.admin_implicit_content_access`, `workflow_template.default_access_mode`, `case.access_mode`, and `case_grant` — all specified in product.md's "Roles, tenancy, and access control" (§5) and [roles-and-tenancy.md](roles-and-tenancy.md), **none built**. Current state is the Stage 2 two-value `workspace_role` enum plus `requireRole`. Ladder + `can()` target Phase 1a; the case ACL targets Phase 1b (nothing to protect until Stage 6/7 make uploads and reviews real). See the dedicated section below.
+- [ ] **Organization tenancy seam**: `organization` table and `workspace.organization_id` (nullable) — deliberately shipped **empty and dormant** in Phase 1b, before there is live data to back-fill. Org roles, org UI, central template library, SSO/SCIM, org dashboard, and cross-workspace carry-forward (`org_ledger_link`) are all explicitly **not built** until a real enterprise deal exists. No third hierarchy level (Team/Project) — rejected, see §5.
 - [ ] Payments: no tables yet — deliberately deferred, bounded context, not started
 - [x] Integrations: `audit_event` is the append-only stream future webhooks will read; no consumer built yet
 
@@ -267,6 +302,9 @@ Last updated: 2026-09-06 (fixed a real bug: `db:migrate`/`db:seed`/`db:reset`/`w
 
 ## Known gaps / things to revisit
 
+- **`requireRole` is the wrong shape and already has call sites.** [db/session.ts](src/db/session.ts) hard-codes `'owner' | 'member'` and its `requireRole(session, 'member')` branch returns `true` unconditionally. Two Stage 5 call sites depend on it (template archive, version publish). It cannot express five nested rungs, a capabilities overlay, or a per-case ACL, so Stage 11 replaces it rather than extending it — flagged here because every stage that lands before Stage 11 adds more call sites to migrate.
+- **`user` has no role column and shouldn't get one.** Role lives on `workspace_member`, which is correct (a user can hold different roles in different workspaces) — noting it because product.md §5's original `User` entity sketch listed `workspace_id, role` on the user, and that line has now been corrected in the doc to match what the schema actually does.
+- **Nothing enforces content confidentiality today.** Any workspace member can read any case in their workspace, including files and party PII. This is correct for Phase 1a's single-user-per-workspace reality (sign-up is still the only way a `workspace_member` row is created), and harmless while no real client documents exist — but it is a hard blocker for the HR and regulated-vertical use cases, and the Stage 11 case ACL must land before the first customer with genuinely confidential cases. Related: the malware-scan gap below touches the same download route that becomes ACL chokepoint #1.
 - **Download route doesn't check malware scan status.** `/api/download/[token]` (Stage 3) will serve any file whose token is valid, regardless of `file_asset.malware_scan_status`. This is fine today because no real upload flow exists yet, but Stage 6/9 must gate downloads on scan status before this touches real files — noted here so it isn't forgotten.
 - **Storage residency decision (R2 vs. ap-south-1) still open** — see the plan's dedicated section. Should be resolved before the first pilot, not discovered during one.
 - **`auth.ts` schema was hand-written and had a real bug** (missing `account.issuer`), found and fixed in Stage 4 by reading `@better-auth/core`'s source directly rather than running `better-auth generate` (the CLI package was never installed). Low but nonzero residual risk: a future Better Auth minor version bump could shift the schema again in a way this project won't catch until something breaks at runtime, since there's no automated check against the library's actual schema — worth revisiting if `better-auth` is ever upgraded.
