@@ -133,15 +133,25 @@ export async function createDraftVersionAction(formData: FormData): Promise<void
   redirect(`/templates/${templateId}`);
 }
 
+/** Newline-separated textarea input -> a clean string[], or null if empty. */
+function parseOptions(raw: string): string[] | null {
+  const options = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return options.length > 0 ? options : null;
+}
+
 function readDefinitionInput(formData: FormData): RequirementDefinitionInput {
   const actionType = String(formData.get('actionType') ?? 'upload') as RequirementDefinitionInput['actionType'];
   const rawAnswerFieldType = String(formData.get('answerFieldType') ?? '');
+  const answerFieldType =
+    actionType === 'answer'
+      ? (rawAnswerFieldType as RequirementDefinitionInput['answerFieldType']) || 'short_text'
+      : null;
   return {
     actionType,
-    answerFieldType:
-      actionType === 'answer'
-        ? (rawAnswerFieldType as RequirementDefinitionInput['answerFieldType']) || 'short_text'
-        : null,
+    answerFieldType,
     title: String(formData.get('title') ?? '').trim(),
     instructions: String(formData.get('instructions') ?? '').trim() || null,
     required: formData.get('required') === 'on',
@@ -150,6 +160,7 @@ function readDefinitionInput(formData: FormData): RequirementDefinitionInput {
     sensitivity: String(
       formData.get('sensitivity') ?? 'general',
     ) as RequirementDefinitionInput['sensitivity'],
+    options: answerFieldType === 'choice' ? parseOptions(String(formData.get('options') ?? '')) : null,
   };
 }
 

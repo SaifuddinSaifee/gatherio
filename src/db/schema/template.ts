@@ -48,6 +48,8 @@ export const requirementDefinition = pgTable('requirement_definition', {
   sequence: integer('sequence').notNull().default(0),
   acceptanceCriteria: text('acceptance_criteria'),
   sensitivity: requirementSensitivity('sensitivity').notNull().default('general'),
+  /** Set only when answerFieldType = 'choice' — the list of selectable values (Stage 6). */
+  options: jsonb('options').$type<string[] | null>(),
   /**
    * Roadmap seam (not evaluated in Phase 1a): "show requirement B when
    * answer to A equals X" — one hop, evaluated at case instantiation.

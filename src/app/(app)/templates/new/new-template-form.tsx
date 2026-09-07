@@ -34,6 +34,17 @@ interface RequirementDraft {
   required: boolean;
   acceptanceCriteria: string;
   sensitivity: Sensitivity;
+  /** Raw textarea value, one option per line — only meaningful when answerFieldType is 'choice'. */
+  optionsText: string;
+}
+
+/** Newline-separated textarea input -> a clean string[], or null if empty. Mirrors the server-side parseOptions in ../actions.ts. */
+function parseOptionsText(raw: string): string[] | null {
+  const options = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return options.length > 0 ? options : null;
 }
 
 /**
@@ -55,6 +66,7 @@ function emptyRequirement(key: string = crypto.randomUUID()): RequirementDraft {
     required: true,
     acceptanceCriteria: '',
     sensitivity: 'general',
+    optionsText: '',
   };
 }
 
@@ -135,6 +147,10 @@ export function NewTemplateForm() {
           sequence: index,
           acceptanceCriteria: r.acceptanceCriteria.trim() || null,
           sensitivity: r.sensitivity,
+          options:
+            r.actionType === 'answer' && r.answerFieldType === 'choice'
+              ? parseOptionsText(r.optionsText)
+              : null,
         })),
       });
       if ('error' in result) {
@@ -321,6 +337,24 @@ function RequirementRow({
             <option value="choice">Choice</option>
             <option value="yes_no">Yes/No</option>
           </Select>
+        </div>
+      )}
+
+      {row.actionType === 'answer' && row.answerFieldType === 'choice' && (
+        <div className="mt-3 max-w-sm">
+          <label htmlFor={`${row.key}-options`} className="block">
+            <span className="mb-1 block text-body-small text-md-on-surface-variant">
+              Options (one per line)
+            </span>
+            <textarea
+              id={`${row.key}-options`}
+              value={row.optionsText}
+              onChange={(e) => onChange({ optionsText: e.target.value })}
+              rows={3}
+              placeholder={'e.g.\nSole proprietorship\nPartnership\nCorporation'}
+              className="w-full rounded-t-xs border-b-2 border-md-outline bg-md-surface-container-low px-4 py-3 text-body-large text-md-on-surface outline-none transition-colors duration-(--duration-effects-default) focus:border-md-primary focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2"
+            />
+          </label>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { partyType } from './enums';
 import { workspace } from './workspace';
 import { templateVersion } from './template';
@@ -39,20 +39,24 @@ export const ledgerSubject = pgTable('ledger_subject', {
 });
 
 /** An external person or organization. Never gets an account (the core thesis). */
-export const party = pgTable('party', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspace.id, { onDelete: 'cascade' }),
-  caseId: uuid('case_id')
-    .notNull()
-    .references(() => caseTable.id, { onDelete: 'cascade' }),
-  partyType: partyType('party_type').notNull().default('individual'),
-  displayName: text('display_name').notNull(),
-  email: text('email'),
-  phone: text('phone'),
-  organizationName: text('organization_name'),
-  /** Lets a party persist across recurring cases (§5) — required for carry-forward. */
-  ledgerSubjectId: uuid('ledger_subject_id').references(() => ledgerSubject.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const party = pgTable(
+  'party',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    caseId: uuid('case_id')
+      .notNull()
+      .references(() => caseTable.id, { onDelete: 'cascade' }),
+    partyType: partyType('party_type').notNull().default('individual'),
+    displayName: text('display_name').notNull(),
+    email: text('email'),
+    phone: text('phone'),
+    organizationName: text('organization_name'),
+    /** Lets a party persist across recurring cases (§5) — required for carry-forward. */
+    ledgerSubjectId: uuid('ledger_subject_id').references(() => ledgerSubject.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('party_case_id_idx').on(t.caseId)],
+);

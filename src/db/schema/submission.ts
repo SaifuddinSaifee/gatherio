@@ -1,10 +1,12 @@
 import {
   bigint,
+  index,
   integer,
   jsonb,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { malwareScanStatus, reviewStatus, validityStatus } from './enums';
@@ -18,70 +20,97 @@ import { user } from './auth';
  * at its predecessor via supersedes_submission_id — the audit history and
  * the rework loop both depend on nothing being mutated in place.
  */
-export const submissionVersion = pgTable('submission_version', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspace.id, { onDelete: 'cascade' }),
-  assignmentId: uuid('assignment_id')
-    .notNull()
-    .references(() => assignment.id, { onDelete: 'cascade' }),
-  versionNumber: integer('version_number').notNull(),
-  submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
-  submittedByPartyId: uuid('submitted_by_party_id')
-    .notNull()
-    .references(() => party.id),
-  supersedesSubmissionId: uuid('supersedes_submission_id'),
-});
+export const submissionVersion = pgTable(
+  'submission_version',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    assignmentId: uuid('assignment_id')
+      .notNull()
+      .references(() => assignment.id, { onDelete: 'cascade' }),
+    versionNumber: integer('version_number').notNull(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+    submittedByPartyId: uuid('submitted_by_party_id')
+      .notNull()
+      .references(() => party.id),
+    supersedesSubmissionId: uuid('supersedes_submission_id'),
+  },
+  (t) => [
+    /**
+     * Makes the max(version_number)+1 race fail loudly instead of
+     * silently duplicating (Stage 6: two concurrent uploads reserving a
+     * version for the same assignment). Gaps from an abandoned upload
+     * stay legal — only duplicates are ruled out.
+     */
+    uniqueIndex('submission_version_assignment_id_version_number_key').on(
+      t.assignmentId,
+      t.versionNumber,
+    ),
+  ],
+);
 
 /** Structured answers for `action_type = 'answer'` requirements — five field types only (§4.1). */
-export const submissionAnswer = pgTable('submission_answer', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspace.id, { onDelete: 'cascade' }),
-  submissionVersionId: uuid('submission_version_id')
-    .notNull()
-    .references(() => submissionVersion.id, { onDelete: 'cascade' }),
-  value: jsonb('value').notNull(),
-});
+export const submissionAnswer = pgTable(
+  'submission_answer',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    submissionVersionId: uuid('submission_version_id')
+      .notNull()
+      .references(() => submissionVersion.id, { onDelete: 'cascade' }),
+    value: jsonb('value').notNull(),
+  },
+  (t) => [index('submission_answer_submission_version_id_idx').on(t.submissionVersionId)],
+);
 
-export const fileAsset = pgTable('file_asset', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspace.id, { onDelete: 'cascade' }),
-  submissionVersionId: uuid('submission_version_id')
-    .notNull()
-    .references(() => submissionVersion.id, { onDelete: 'cascade' }),
-  /** Format fixed at {workspace_id}/{case_id}/{submission_version_id}/{uuid} (techstack.md) — never the original filename. */
-  storageKey: text('storage_key').notNull().unique(),
-  originalFilename: text('original_filename').notNull(),
-  mimeType: text('mime_type').notNull(),
-  byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
-  sha256Hash: text('sha256_hash').notNull(),
-  malwareScanStatus: malwareScanStatus('malware_scan_status').notNull().default('pending'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const fileAsset = pgTable(
+  'file_asset',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    submissionVersionId: uuid('submission_version_id')
+      .notNull()
+      .references(() => submissionVersion.id, { onDelete: 'cascade' }),
+    /** Format fixed at {workspace_id}/{case_id}/{submission_version_id}/{uuid} (techstack.md) — never the original filename. */
+    storageKey: text('storage_key').notNull().unique(),
+    originalFilename: text('original_filename').notNull(),
+    mimeType: text('mime_type').notNull(),
+    byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+    sha256Hash: text('sha256_hash').notNull(),
+    malwareScanStatus: malwareScanStatus('malware_scan_status').notNull().default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('file_asset_submission_version_id_idx').on(t.submissionVersionId)],
+);
 
 /**
  * `reason` is structured input to the next reminder for this assignment,
  * not a note (§5) — the rework loop is a first-class event, not a status
  * flag. See src/lib/domain for how it's threaded into reminder copy.
  */
-export const review = pgTable('review', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspace.id, { onDelete: 'cascade' }),
-  submissionVersionId: uuid('submission_version_id')
-    .notNull()
-    .references(() => submissionVersion.id, { onDelete: 'cascade' }),
-  reviewStatus: reviewStatus('review_status').notNull().default('unreviewed'),
-  reviewedBy: text('reviewed_by').references(() => user.id),
-  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
-  reason: text('reason'),
-});
+export const review = pgTable(
+  'review',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    submissionVersionId: uuid('submission_version_id')
+      .notNull()
+      .references(() => submissionVersion.id, { onDelete: 'cascade' }),
+    reviewStatus: reviewStatus('review_status').notNull().default('unreviewed'),
+    reviewedBy: text('reviewed_by').references(() => user.id),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    reason: text('reason'),
+  },
+  (t) => [index('review_submission_version_id_idx').on(t.submissionVersionId)],
+);
 
 /** Anchored to a subject (§4.3), not to the requirement that happened to collect it — the carry-forward mechanism. */
 export const documentValidity = pgTable('document_validity', {

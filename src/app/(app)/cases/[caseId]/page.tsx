@@ -1,9 +1,11 @@
+import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import {
   MdBusiness,
   MdCancel,
   MdCheckCircle,
   MdEditNote,
+  MdError,
   MdLink,
   MdMail,
   MdPerson,
@@ -15,9 +17,11 @@ import type { IconType } from 'react-icons';
 import { getCurrentSession } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import { getCaseDetail } from '@/lib/domain/case';
-import { env } from '@/lib/env';
+import { CASE_LINK_FLASH_COOKIE_NAME, readCaseLinkFlash } from '@/lib/case-link-flash';
 import { AppHeader } from '@/components/app-header';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { resendInviteAction, revokeAndReissueAction } from '../actions';
 
 const FULFILMENT_LABEL: Record<string, string> = {
   pending: 'Pending',
@@ -42,18 +46,22 @@ export default async function CaseDetailPage({
   searchParams,
 }: {
   params: Promise<{ caseId: string }>;
-  searchParams: Promise<{ newToken?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const session = await getCurrentSession();
   if (!session) return null;
 
   const { caseId } = await params;
-  const { newToken } = await searchParams;
+  const { error } = await searchParams;
 
   const detail = await getCaseDetail(session.workspaceId, caseId);
   if (!detail) notFound();
 
   const [workspace] = await Promise.all([getWorkspaceById(session.workspaceId)]);
+
+  const cookieStore = await cookies();
+  const flashRaw = cookieStore.get(CASE_LINK_FLASH_COOKIE_NAME)?.value;
+  const flash = flashRaw ? readCaseLinkFlash(flashRaw, caseId) : null;
 
   return (
     <>
@@ -65,21 +73,54 @@ export default async function CaseDetailPage({
           {detail.case.dueAt && ` · due ${detail.case.dueAt.toLocaleDateString()}`}
         </p>
 
-        {newToken && (
-          <Card variant="outlined" className="mt-6 border-md-primary">
-            <p className="flex items-center gap-2 text-title-medium text-md-on-surface">
-              <MdLink aria-hidden="true" className="h-5 w-5 text-md-primary" />
-              Recipient link
+        <h2 className="mt-8 text-title-medium text-md-on-surface">Recipient access</h2>
+        <Card variant="outlined" className="mt-3">
+          {error && (
+            <p role="alert" className="mb-3 flex items-center gap-2 text-body-small text-md-error">
+              <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+              {error}
             </p>
-            <p className="mt-1 text-body-small text-md-on-surface-variant">
-              This link is shown once. Copy it now — Gather stores only a hash of the token, not
-              the token itself, so it cannot be shown again.
+          )}
+
+          {flash ? (
+            <>
+              <p className="flex items-center gap-2 text-title-medium text-md-on-surface">
+                <MdLink aria-hidden="true" className="h-5 w-5 text-md-primary" />
+                Recipient link
+              </p>
+              <p className="mt-1 text-body-small text-md-on-surface-variant">
+                This link is shown once. Copy it now — Gather stores only a hash of the token, not
+                the token itself, so it cannot be shown again.
+              </p>
+              <code className="mt-3 block break-all rounded-sm bg-md-surface-container-high px-3 py-2 text-body-small text-md-on-surface">
+                {flash.link}
+              </code>
+              <p className="mt-2 text-body-small text-md-on-surface-variant">
+                Expires {new Date(flash.expiresAt).toLocaleDateString()}
+              </p>
+            </>
+          ) : (
+            <p className="text-body-small text-md-on-surface-variant">
+              An invite was sent to {detail.party?.email ?? 'the recipient'}. Use Resend if they
+              never received it, or Revoke &amp; reissue if the link went to the wrong person.
             </p>
-            <code className="mt-3 block break-all rounded-sm bg-md-surface-container-high px-3 py-2 text-body-small text-md-on-surface">
-              {env.APP_URL}/r/{newToken}
-            </code>
-          </Card>
-        )}
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            <form action={resendInviteAction}>
+              <input type="hidden" name="caseId" value={caseId} />
+              <Button type="submit" variant="outlined">
+                Resend invite
+              </Button>
+            </form>
+            <form action={revokeAndReissueAction}>
+              <input type="hidden" name="caseId" value={caseId} />
+              <Button type="submit" variant="text">
+                Revoke &amp; reissue
+              </Button>
+            </form>
+          </div>
+        </Card>
 
         <h2 className="mt-8 text-title-medium text-md-on-surface">Recipient</h2>
         <Card className="mt-3">

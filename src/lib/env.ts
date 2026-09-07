@@ -20,6 +20,11 @@ const envSchema = z.object({
   POSTMARK_TOKEN: z.string().optional(),
 
   SCAN_DRIVER: z.enum(['noop', 'clamav']).default('noop'),
+
+  // --- Recipient page (Stage 6) --------------------------------------
+  UPLOAD_MAX_BYTES: z.coerce.number().default(26_214_400), // 25 MB
+  UPLOAD_PRESIGN_TTL_SECONDS: z.coerce.number().default(900),
+  RECIPIENT_SESSION_TTL_SECONDS: z.coerce.number().default(3600),
 });
 
 /**

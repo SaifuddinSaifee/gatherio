@@ -1,8 +1,19 @@
-import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from './schema';
+import type { Database } from './client';
 import type { WorkspaceId } from './scoped';
 
-type Tx = NodePgDatabase<typeof schema>;
+/**
+ * The actual type `db.transaction(async (tx) => ...)` hands its callback
+ * — derived structurally from Database['transaction'] rather than
+ * hand-typed as NodePgDatabase<typeof schema>. The two look like they
+ * should be the same thing but aren't: a transaction handle is missing
+ * the `$client: Pool` property NodePgDatabase requires, which is a type
+ * error at every real call site (caught when Stage 6 became the first
+ * caller of withAudit — nothing had exercised this signature before).
+ * Deriving it this way means a future drizzle-orm version can't silently
+ * reintroduce the same mismatch.
+ */
+type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 export interface AuditEventInput {
   workspaceId: WorkspaceId;

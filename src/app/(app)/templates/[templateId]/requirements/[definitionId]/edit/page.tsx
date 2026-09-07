@@ -78,6 +78,17 @@ export default async function EditRequirementDefinitionPage({
               <option value="choice">Choice</option>
               <option value="yes_no">Yes/No</option>
             </Select>
+            <label className="block">
+              <span className="mb-1 block text-body-small text-md-on-surface-variant">
+                Options (one per line — only used when answer type is Choice)
+              </span>
+              <textarea
+                name="options"
+                defaultValue={(definition.options ?? []).join('\n')}
+                rows={3}
+                className="w-full rounded-t-xs border-b-2 border-md-outline bg-md-surface-container-low px-4 py-3 text-body-large text-md-on-surface outline-none transition-colors duration-(--duration-effects-default) focus:border-md-primary focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2"
+              />
+            </label>
             <Select label="Sensitivity" name="sensitivity" defaultValue={definition.sensitivity}>
               <option value="general">General</option>
               <option value="routine_business">Routine business</option>
