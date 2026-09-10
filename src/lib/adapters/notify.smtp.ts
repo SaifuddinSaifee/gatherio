@@ -18,7 +18,7 @@ export function smtpNotifyAdapter(): NotifyAdapter {
   });
 
   return {
-    async send({ channel, recipient, templateRef, variables, subject }) {
+    async send({ channel, recipient, subject, body }) {
       if (channel !== 'email') {
         throw new Error(`smtpNotifyAdapter cannot send channel "${channel}".`);
       }
@@ -26,28 +26,14 @@ export function smtpNotifyAdapter(): NotifyAdapter {
         throw new Error('Email channel requires recipient.email.');
       }
 
-      const body = renderTemplate(templateRef, variables);
       const info = await transport.sendMail({
         from: env.MAIL_FROM,
         to: recipient.email,
-        subject: subject ?? templateRef,
+        subject,
         text: body,
       });
 
       return { providerMessageId: info.messageId };
     },
   };
-}
-
-/**
- * Placeholder renderer — Stage 8 replaces this with the real template
- * library keyed by templateRef (and the unopened/stalled copy variants).
- * Kept dumb on purpose so nothing here tempts a call site into passing
- * free-form prose as `templateRef`.
- */
-function renderTemplate(templateRef: string, variables: Record<string, string>): string {
-  const vars = Object.entries(variables)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join('\n');
-  return `[template: ${templateRef}]\n${vars}`;
 }

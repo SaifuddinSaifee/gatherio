@@ -41,7 +41,13 @@ describe('local storage adapter', () => {
     }
     await writeLocalFile(payload.key, body());
 
-    await expect(adapter.complete(key)).resolves.toBeUndefined();
+    const completed = await adapter.complete(key);
+    expect(completed.byteSize).toBe(Buffer.byteLength('hello world'));
+    expect(completed.contentType).toBeNull();
+    // sha256('hello world')
+    expect(completed.sha256).toBe(
+      'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9',
+    );
 
     const { readFile } = await import('node:fs/promises');
     const written = await readFile(localFilePath(key), 'utf8');

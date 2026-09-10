@@ -74,9 +74,11 @@ test('template lifecycle: draft, add requirements, publish, instantiate a case, 
   await page.fill('#displayName', 'Acme Corp');
   await page.fill('#email', 'vendor@acme.example');
   await page.click('button:has-text("Create case")');
-  await page.waitForURL(/\/cases\/[^/]+\?newToken=/);
+  await page.waitForURL(/\/cases\/[^/]+$/);
 
-  // One-time recipient link is shown, and points at /r/<token>.
+  // The recipient's magic link is revealed via a signed flash cookie
+  // (Stage 6), not a `?newToken=` query param — it never touches the URL
+  // or browser history. It's shown once, and points at /r/<token>.
   const linkCode = page.locator('code');
   await expect(linkCode).toContainText('/r/');
   const caseUrl = new URL(page.url()).origin + new URL(page.url()).pathname;

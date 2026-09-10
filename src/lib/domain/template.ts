@@ -11,6 +11,8 @@ export interface RequirementDefinitionInput {
   sequence: number;
   acceptanceCriteria: string | null;
   sensitivity: 'general' | 'routine_business' | 'tax_identity' | 'banking' | 'high_value_agreement';
+  /** Set only when answerFieldType = 'choice' — the list of selectable values (Stage 6). */
+  options: string[] | null;
 }
 
 /** Thrown when an action would mutate a published (non-draft) version. Versions are immutable once active — see design decision in plan-1a.md Stage 5. */
@@ -199,6 +201,7 @@ export async function createDraftFromLatest(workspaceId: WorkspaceId, templateId
           sequence: d.sequence,
           acceptanceCriteria: d.acceptanceCriteria,
           sensitivity: d.sensitivity,
+          options: d.options,
         })),
       );
     }

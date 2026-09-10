@@ -25,6 +25,23 @@ export interface PresignDownloadResult {
   expiresAt: Date;
 }
 
+/**
+ * What the server can trust about an object once it has actually landed
+ * in storage (Stage 6) — never what a client claimed about it. This is
+ * why complete() does real work now instead of just confirming
+ * existence: file_asset.sha256Hash/mimeType/byteSize are all NOT NULL,
+ * and the server never sees the bytes on a direct-to-R2 upload, so this
+ * is the one place those values can be measured rather than trusted.
+ * `byteSize` in particular is load-bearing — the R2 driver's
+ * presignUpload ignores `maxBytes` entirely, so this is the only place
+ * an upload size cap is enforceable in production.
+ */
+export interface CompletedObject {
+  byteSize: number;
+  contentType: string | null; // null for the local driver — it stores no metadata
+  sha256: string; // lowercase hex
+}
+
 export interface StorageAdapter {
   presignUpload(params: {
     key: string;
@@ -38,8 +55,8 @@ export interface StorageAdapter {
     expiresInSeconds?: number;
   }): Promise<PresignDownloadResult>;
 
-  /** Called once the client reports the upload finished. Verifies the object exists. */
-  complete(key: string): Promise<void>;
+  /** Called once the client reports the upload finished. Verifies the object exists and measures it. */
+  complete(key: string): Promise<CompletedObject>;
 
   delete(key: string): Promise<void>;
 }

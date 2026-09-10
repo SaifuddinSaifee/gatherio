@@ -1,8 +1,11 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 import { scoped, type WorkspaceId } from '@/db/scoped';
 import * as schema from '@/db/schema';
+import { withAudit } from '@/db/audit';
 import { generateAccessToken } from '@/lib/token';
 import { getLatestVersion, listRequirementDefinitions } from './template';
+
+const ACCESS_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface PartyInput {
   partyType: 'individual' | 'organization';
@@ -76,6 +79,7 @@ export async function instantiateCase(
           sequence: d.sequence,
           acceptanceCriteria: d.acceptanceCriteria,
           sensitivity: d.sensitivity,
+          options: d.options,
         })),
       )
       .returning();
@@ -91,16 +95,32 @@ export async function instantiateCase(
     // Phase 1a always issues the lowest tier of the §4.7 auth ladder —
     // step-up (banking/high-value) is a policy lookup deferred to when
     // those requirement types actually ship.
-    await tx.insert(schema.accessToken).values({
+    const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS);
+    const [tokenRow] = await tx
+      .insert(schema.accessToken)
+      .values({
+        workspaceId,
+        caseId: caseRow.id,
+        partyId: party.id,
+        tokenHash,
+        authLevel: 'link',
+        expiresAt,
+      })
+      .returning();
+    if (!tokenRow) throw new Error('Failed to issue access token.');
+
+    await withAudit(tx, {
       workspaceId,
       caseId: caseRow.id,
-      partyId: party.id,
-      tokenHash,
-      authLevel: 'link',
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      actorType: 'user',
+      actorId: userId,
+      eventType: 'access_token.issued',
+      objectType: 'access_token',
+      objectId: tokenRow.id,
+      metadata: { expiresAt: expiresAt.toISOString(), reason: 'case_created' },
     });
 
-    return { case: caseRow, party };
+    return { case: caseRow, party, expiresAt };
   });
 
   return { ...result, token };
@@ -195,4 +215,130 @@ export async function getCaseDetail(workspaceId: WorkspaceId, caseId: string) {
     party: party ?? null,
     requirements,
   };
+}
+
+export type IssueAccessMode = 'resend' | 'reissue';
+
+export interface IssuedAccess {
+  token: string;
+  expiresAt: Date;
+  party: typeof schema.party.$inferSelect;
+  caseRow: typeof schema.caseTable.$inferSelect;
+}
+
+/**
+ * Mints a fresh access token for an existing case's recipient. `resend`
+ * leaves every existing live token alone — the client just lost the
+ * email, the old link should keep working. `reissue` revokes every live
+ * token first — the link was forwarded to the wrong person, so the old
+ * one must stop working. Splitting the two matters: if resend always
+ * revoked, a requester helpfully resending would kick a recipient out
+ * mid-upload.
+ */
+export async function issueCaseAccess(
+  workspaceId: WorkspaceId,
+  userId: string,
+  caseId: string,
+  mode: IssueAccessMode,
+): Promise<IssuedAccess> {
+  const s = scoped(workspaceId);
+  const { token, tokenHash } = generateAccessToken();
+  const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS);
+
+  const result = await s.db.transaction(async (tx) => {
+    const [caseRow] = await tx
+      .select()
+      .from(schema.caseTable)
+      .where(s.where(schema.caseTable.workspaceId, eq(schema.caseTable.id, caseId)))
+      .limit(1);
+    if (!caseRow) throw new Error('Case not found.');
+
+    const [partyRow] = await tx
+      .select()
+      .from(schema.party)
+      .where(eq(schema.party.caseId, caseId))
+      .orderBy(asc(schema.party.createdAt))
+      .limit(1);
+    if (!partyRow) throw new Error('This case has no recipient.');
+    if (!partyRow.email) throw new Error('This recipient has no email address on file.');
+
+    if (mode === 'reissue') {
+      const liveTokens = await tx
+        .select({ id: schema.accessToken.id })
+        .from(schema.accessToken)
+        .where(and(eq(schema.accessToken.caseId, caseId), isNull(schema.accessToken.revokedAt)));
+
+      if (liveTokens.length > 0) {
+        await tx
+          .update(schema.accessToken)
+          .set({ revokedAt: new Date() })
+          .where(and(eq(schema.accessToken.caseId, caseId), isNull(schema.accessToken.revokedAt)));
+
+        for (const liveToken of liveTokens) {
+          await withAudit(tx, {
+            workspaceId,
+            caseId,
+            actorType: 'user',
+            actorId: userId,
+            eventType: 'access_token.revoked',
+            objectType: 'access_token',
+            objectId: liveToken.id,
+            metadata: { reason: 'reissue' },
+          });
+        }
+      }
+    }
+
+    const [tokenRow] = await tx
+      .insert(schema.accessToken)
+      .values({ workspaceId, caseId, partyId: partyRow.id, tokenHash, authLevel: 'link', expiresAt })
+      .returning();
+    if (!tokenRow) throw new Error('Failed to issue access token.');
+
+    await withAudit(tx, {
+      workspaceId,
+      caseId,
+      actorType: 'user',
+      actorId: userId,
+      eventType: 'access_token.issued',
+      objectType: 'access_token',
+      objectId: tokenRow.id,
+      metadata: { expiresAt: expiresAt.toISOString(), reason: mode },
+    });
+
+    return { caseRow, party: partyRow };
+  });
+
+  return { token, expiresAt, party: result.party, caseRow: result.caseRow };
+}
+
+/**
+ * A standalone audit write — there is no larger business transaction to
+ * ride along with here, since it records the outcome of a network call
+ * (sendCaseInvite) that must happen outside any transaction.
+ */
+export async function recordInviteSent(
+  workspaceId: WorkspaceId,
+  caseId: string,
+  userId: string,
+  outcome: { recipient: string; providerMessageId?: string },
+): Promise<void> {
+  const s = scoped(workspaceId);
+  await s.db.transaction(async (tx) => {
+    await withAudit(tx, {
+      workspaceId,
+      caseId,
+      actorType: 'user',
+      actorId: userId,
+      eventType: 'case.invite_sent',
+      objectType: 'case',
+      objectId: caseId,
+      metadata: {
+        channel: 'email',
+        recipient: outcome.recipient,
+        providerMessageId: outcome.providerMessageId ?? null,
+        templateRef: 'case_invite',
+      },
+    });
+  });
 }

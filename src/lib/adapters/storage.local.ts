@@ -1,8 +1,9 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { mkdir, open, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { env } from '@/lib/env';
-import type { PresignDownloadResult, PresignUploadResult, StorageAdapter } from './storage';
+import type { CompletedObject, PresignDownloadResult, PresignUploadResult, StorageAdapter } from './storage';
 
 /**
  * Filesystem-backed storage so the whole app runs with zero cloud
@@ -43,6 +44,16 @@ export function verifyLocalStorageToken(token: string): TokenPayload {
   return payload;
 }
 
+function hashFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256');
+    const stream = createReadStream(filePath);
+    stream.on('error', reject);
+    stream.on('data', (chunk: string | Buffer) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
 function absolutePath(key: string): string {
   const root = path.resolve(process.cwd(), env.STORAGE_LOCAL_DIR);
   const resolved = path.resolve(root, key);
@@ -81,10 +92,14 @@ export function localStorageAdapter(): StorageAdapter {
       return result;
     },
 
-    async complete(key) {
+    async complete(key): Promise<CompletedObject> {
       const filePath = absolutePath(key);
       const info = await stat(filePath).catch(() => null);
       if (!info) throw new Error(`Upload did not complete: ${key} not found.`);
+      const sha256 = await hashFile(filePath);
+      // The local driver stores no separate metadata sidecar — it has no
+      // content-type to report back, unlike R2's HeadObject.
+      return { byteSize: info.size, contentType: null, sha256 };
     },
 
     async delete(key) {

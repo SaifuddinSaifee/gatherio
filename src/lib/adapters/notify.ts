@@ -28,7 +28,8 @@ export interface NotifyAdapter {
     recipient: NotifyRecipient;
     templateRef: string;
     variables: Record<string, string>;
-    subject?: string;
+    subject: string;
+    body: string;
   }): Promise<SendResult>;
 }
 

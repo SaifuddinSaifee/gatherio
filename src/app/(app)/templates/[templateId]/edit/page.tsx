@@ -85,6 +85,7 @@ export default async function EditTemplatePage({
                 required: d.required,
                 acceptanceCriteria: d.acceptanceCriteria ?? '',
                 sensitivity: d.sensitivity,
+                options: d.options,
               }),
             )}
           />

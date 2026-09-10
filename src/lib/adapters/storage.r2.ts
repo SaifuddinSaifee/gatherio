@@ -1,8 +1,9 @@
+import { createHash } from 'node:crypto';
 import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { env } from '@/lib/env';
-import type { PresignDownloadResult, PresignUploadResult, StorageAdapter } from './storage';
+import type { CompletedObject, PresignDownloadResult, PresignUploadResult, StorageAdapter } from './storage';
 
 /**
  * Cloudflare R2, S3-compatible. Per the plan's residency note: R2 has no
@@ -63,12 +64,31 @@ export function r2StorageAdapter(): StorageAdapter {
       return result;
     },
 
-    async complete(key) {
+    async complete(key): Promise<CompletedObject> {
       const s3 = client();
       // No bucket event to rely on (see file header) — this is the only
       // point that confirms the object landed before anything downstream
       // (Stage 8's scan enqueue) treats the submission as real.
-      await s3.send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
+      const head = await s3.send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
+
+      // R2 has zero egress cost, but this still reads the whole object
+      // back through the app to hash it (Stage 6) — the server never
+      // sees the bytes on a direct-to-R2 PUT, and file_asset.sha256Hash
+      // is NOT NULL. Stage 8's scan job has to fetch these same bytes
+      // anyway, so this read-back is expected to merge into that single
+      // pass once scanning moves off the request path.
+      const object = await s3.send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
+      if (!object.Body) throw new Error(`Object body missing for ${key}.`);
+      const hash = createHash('sha256');
+      for await (const chunk of object.Body as unknown as AsyncIterable<Uint8Array>) {
+        hash.update(chunk);
+      }
+
+      return {
+        byteSize: head.ContentLength ?? 0,
+        contentType: head.ContentType ?? null,
+        sha256: hash.digest('hex'),
+      };
     },
 
     async delete(key) {
