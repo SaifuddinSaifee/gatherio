@@ -52,6 +52,8 @@ export interface StorageAdapter {
 
   presignDownload(params: {
     key: string;
+    /** The name to hand the browser via Content-Disposition — never the storage key. */
+    filename?: string;
     expiresInSeconds?: number;
   }): Promise<PresignDownloadResult>;
 
@@ -59,6 +61,20 @@ export interface StorageAdapter {
   complete(key: string): Promise<CompletedObject>;
 
   delete(key: string): Promise<void>;
+}
+
+/**
+ * A Content-Disposition value carrying the real filename, not just
+ * `attachment`. Both the `filename` (ASCII, quoted) and `filename*`
+ * (RFC 5987 UTF-8) forms are set — the former for older clients, the
+ * latter so non-ASCII names survive intact. Non-ASCII bytes in the
+ * ASCII form are replaced rather than percent-encoded: it's only ever a
+ * fallback for clients that skip `filename*`.
+ */
+export function contentDispositionHeader(filename?: string): string {
+  if (!filename) return 'attachment';
+  const ascii = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "'");
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 let cached: StorageAdapter | undefined;

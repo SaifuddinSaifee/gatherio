@@ -49,13 +49,12 @@ test.describe('Stage 7 — review and the rework loop', () => {
     const fileLinkV1 = uploadCard.getByRole('link', { name: 'statement-v1.pdf' });
     await expect(fileLinkV1).toBeVisible();
 
-    // The file link actually downloads (ACL chokepoint 1's route). Not
-    // asserting on suggestedFilename(): the storage adapter's presigned
-    // URL carries no Content-Disposition filename (a pre-existing Stage
-    // 3/6 gap in storage.local.ts, unrelated to Stage 7), so the browser
-    // falls back to the opaque signed-token path segment.
+    // The file link actually downloads (ACL chokepoint 1's route), with
+    // its real filename via Content-Disposition rather than the opaque
+    // signed-token path segment.
     const [download] = await Promise.all([page.waitForEvent('download'), fileLinkV1.click()]);
     expect(download.url()).toContain('/api/download/');
+    expect(download.suggestedFilename()).toBe('statement-v1.pdf');
 
     // Approve the answer. The server action redirects back to this same
     // URL, so `page.waitForURL(caseUrl)` would resolve immediately

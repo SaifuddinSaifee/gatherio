@@ -110,7 +110,10 @@ export async function presignFileDownload(
   });
 
   const storage = await getStorageAdapter();
-  const { url, expiresAt } = await storage.presignDownload({ key: row.fileAsset.storageKey });
+  const { url, expiresAt } = await storage.presignDownload({
+    key: row.fileAsset.storageKey,
+    filename: row.fileAsset.originalFilename,
+  });
 
   return { url, expiresAt, filename: row.fileAsset.originalFilename };
 }

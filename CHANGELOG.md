@@ -2,6 +2,31 @@
 
 Notable changes to Gather, grouped by build stage (see `CHECKLIST.md` and `product.md`). This project ships in stages rather than versions, so entries are dated and named by stage instead of semver.
 
+## Post-Stage-7 — Real download filenames (2026-09-12)
+
+Suggested commit message:
+
+```text
+Fix: downloaded files keep their real filename
+
+presignDownload now accepts an optional filename, threaded from
+fileAsset.originalFilename through both storage drivers instead of
+being discarded: the local driver's signed token carries it to
+/api/download/[token], which sets a real Content-Disposition header
+(quoted ASCII form plus an RFC 5987 filename* for non-ASCII names);
+the R2 driver sets the equivalent ResponseContentDisposition on its
+presigned URL. Both go through one shared, unit-tested
+contentDispositionHeader() helper, including a header-injection-
+attempt case (embedded CR/LF and quotes).
+
+Retires the "opaque download filename" gap logged in Stage 7 — the
+data was already there (presignFileDownload already returned it),
+it just wasn't wired through to the response header.
+```
+
+- **Fixed:** `contentDispositionHeader()` added to `src/lib/adapters/storage.ts`; wired through `storage.local.ts` (via the signed download token), `storage.r2.ts` (via `ResponseContentDisposition`), `presignFileDownload`, and `/api/download/[token]/route.ts`.
+- **Tests:** unit tests for the header helper (plain, non-ASCII, header-injection attempt) and for the local token round-trip; `stage7-review.spec.ts` now asserts `download.suggestedFilename()` instead of skipping it.
+
 ## Stage 7 — Review and the rework loop (2026-09-12)
 
 Suggested commit message:
@@ -49,7 +74,7 @@ Suggested commit message:
 - A pre-existing race in the shared e2e setup helper (`page.click('Publish')` immediately followed by `page.goto(...)`) could leave a template stuck in `draft`, intermittently flaking Stage 5/6 specs as well as the new Stage 7 spec. Fixed by waiting for the "Published" confirmation before navigating away.
 
 ### Known gaps (deferred, tracked in `CHECKLIST.md`)
-- Downloaded files get an opaque filename instead of their real one — the filename is already stored (`fileAsset.originalFilename`) and already returned by `presignFileDownload`, but the local storage driver's signed token and `/api/download/[token]` don't yet carry it through to `Content-Disposition`.
+- ~~Downloaded files get an opaque filename instead of their real one~~ — fixed in the post-Stage-7 follow-up above.
 - Four textareas predating this stage (two template-builder forms, the requirement-edit page, the recipient's long-text `AnswerField`) are still hand-rolled rather than using the new `TextArea` primitive.
 - `rejected` review status is defined (including a DB check) but unreachable from any UI path today.
 - No recipient email/notification on request-changes yet — that's Stage 8's reminder engine; Stage 7 only does the data plumbing (`listOutstandingForReminder`).
