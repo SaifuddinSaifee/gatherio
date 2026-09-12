@@ -221,6 +221,8 @@ Last updated: 2026-09-07 (Stage 6 — magic links and the recipient page — **c
 
 **Follow-up fix (post-Stage-7):** the storage adapter's presigned download URL used to carry no `Content-Disposition` filename (a Stage 3/6 gap, `storage.local.ts`), so a browser's Save-As dialog defaulted to the opaque signed-token path segment rather than the file's real name. Fixed: `presignDownload` now takes an optional `filename`, `presignFileDownload` passes `fileAsset.originalFilename` through to it, the local driver's signed token carries it to `/api/download/[token]` (which sets a real `Content-Disposition: attachment; filename="..."; filename*=UTF-8''...`), and the R2 driver sets the equivalent `ResponseContentDisposition` on its presigned URL. Shared `contentDispositionHeader()` helper in `storage.ts`, unit-tested for plain, non-ASCII, and header-injection-attempt filenames; `stage7-review.spec.ts` now asserts `download.suggestedFilename()` for real.
 
+- Important TODO: rejected review status is currently defined at the data layer but has no UI path.
+
 ## Stage 8 — Reminders
 
 - [ ] `pg-boss` job registered in `src/worker/jobs/reminder.ts`
