@@ -1,11 +1,12 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { scoped, type WorkspaceId } from '@/db/scoped';
 import * as schema from '@/db/schema';
 import type { RecipientSession } from '@/db/party-session';
-import { isStoredAnswer, type StoredAnswer } from './answer';
+import type { StoredAnswer } from './answer';
+import { loadAssignmentHistory } from './submission-history';
 
 /**
- * The recipient page's one read path (Stage 6). Every query is filtered
+ * The recipient page's one read path (Stage 6/7). Every query is filtered
  * by `session.caseId` from the start — `requirement`, then `assignment`
  * joined by requirement id *and* party id, then everything hanging off
  * that assignment's latest submission_version — so a row belonging to a
@@ -19,6 +20,14 @@ import { isStoredAnswer, type StoredAnswer } from './answer';
  * product's target scale) — a single flat join would fan out across
  * however many submission_version rows an assignment has accumulated and
  * need the same de-duplication in application code anyway.
+ *
+ * Stage 7: "latest" comes from `loadAssignmentHistory` (submission-
+ * history.ts), the same "latest *completed* version" definition every
+ * other read/write path shares — an abandoned upload reservation can
+ * never surface here as if it were the recipient's current submission.
+ * Deliberately no `previousSubmission` field: when the latest review is
+ * `changes_requested`, `latestSubmission` already *is* the version the
+ * requester reviewed — there's nothing else to show alongside it.
  */
 
 export interface RecipientLatestSubmission {
@@ -85,64 +94,12 @@ export async function getRecipientView(session: RecipientSession): Promise<Recip
     // assignment for THIS party rather than checking.
     if (!assignment) continue;
 
-    const [latestVersion] = await s.db
-      .select()
-      .from(schema.submissionVersion)
-      .where(
-        s.where(
-          schema.submissionVersion.workspaceId,
-          eq(schema.submissionVersion.assignmentId, assignment.id),
-        ),
-      )
-      .orderBy(desc(schema.submissionVersion.versionNumber))
-      .limit(1);
+    const [latest] = await loadAssignmentHistory(s.db, session.workspaceId, assignment.id);
 
-    let latestSubmission: RecipientLatestSubmission | null = null;
-    let latestReview: RecipientRequirementItem['latestReview'] = null;
-
-    if (latestVersion) {
-      const [fileAsset] = await s.db
-        .select()
-        .from(schema.fileAsset)
-        .where(
-          s.where(
-            schema.fileAsset.workspaceId,
-            eq(schema.fileAsset.submissionVersionId, latestVersion.id),
-          ),
-        )
-        .limit(1);
-
-      const [answerRow] = await s.db
-        .select()
-        .from(schema.submissionAnswer)
-        .where(
-          s.where(
-            schema.submissionAnswer.workspaceId,
-            eq(schema.submissionAnswer.submissionVersionId, latestVersion.id),
-          ),
-        )
-        .limit(1);
-
-      latestSubmission = {
-        submissionVersion: latestVersion,
-        fileAsset: fileAsset ?? null,
-        answer: answerRow && isStoredAnswer(answerRow.value) ? answerRow.value : null,
-      };
-
-      // Nothing writes `review` rows until Stage 7, and there's no more
-      // than one expected per submission_version in practice — ordering
-      // by reviewedAt (nullable) is a placeholder Stage 7 should revisit
-      // once a version can genuinely accumulate more than one.
-      const [reviewRow] = await s.db
-        .select()
-        .from(schema.review)
-        .where(
-          s.where(schema.review.workspaceId, eq(schema.review.submissionVersionId, latestVersion.id)),
-        )
-        .orderBy(desc(schema.review.reviewedAt))
-        .limit(1);
-      latestReview = reviewRow ?? null;
-    }
+    const latestSubmission: RecipientLatestSubmission | null = latest
+      ? { submissionVersion: latest.submissionVersion, fileAsset: latest.fileAsset, answer: latest.answer }
+      : null;
+    const latestReview = latest?.latestReview ?? null;
 
     items.push({ requirement, assignment, latestSubmission, latestReview });
   }

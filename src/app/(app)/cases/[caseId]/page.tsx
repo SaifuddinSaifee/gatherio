@@ -1,44 +1,22 @@
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
-import {
-  MdBusiness,
-  MdCancel,
-  MdCheckCircle,
-  MdEditNote,
-  MdError,
-  MdLink,
-  MdMail,
-  MdPerson,
-  MdRemoveCircleOutline,
-  MdSchedule,
-  MdVisibility,
-} from 'react-icons/md';
+import { MdBusiness, MdCheckCircle, MdError, MdLink, MdMail, MdPerson, MdRateReview, MdSchedule } from 'react-icons/md';
 import type { IconType } from 'react-icons';
 import { getCurrentSession } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import { getCaseDetail } from '@/lib/domain/case';
+import type { CaseStatusResult } from '@/lib/domain/case-status';
 import { CASE_LINK_FLASH_COOKIE_NAME, readCaseLinkFlash } from '@/lib/case-link-flash';
 import { AppHeader } from '@/components/app-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { resendInviteAction, revokeAndReissueAction } from '../actions';
+import { ReviewItem } from './review-item';
 
-const FULFILMENT_LABEL: Record<string, string> = {
-  pending: 'Pending',
-  viewed: 'Viewed',
-  in_progress: 'In progress',
-  submitted: 'Submitted',
-  waived: 'Waived',
-  cancelled: 'Cancelled',
-};
-
-const FULFILMENT_ICON: Record<string, IconType> = {
-  pending: MdSchedule,
-  viewed: MdVisibility,
-  in_progress: MdEditNote,
-  submitted: MdCheckCircle,
-  waived: MdRemoveCircleOutline,
-  cancelled: MdCancel,
+const CASE_STATUS_DISPLAY: Record<CaseStatusResult['status'], { label: string; Icon: IconType }> = {
+  complete: { label: 'Complete', Icon: MdCheckCircle },
+  needs_review: { label: 'Needs review', Icon: MdRateReview },
+  awaiting_recipient: { label: 'Waiting on recipient', Icon: MdSchedule },
 };
 
 export default async function CaseDetailPage({
@@ -73,15 +51,46 @@ export default async function CaseDetailPage({
           {detail.case.dueAt && ` · due ${detail.case.dueAt.toLocaleDateString()}`}
         </p>
 
+        <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-label-large text-md-on-surface-variant">
+          {(() => {
+            const { label, Icon } = CASE_STATUS_DISPLAY[detail.status];
+            return (
+              <span className="flex items-center gap-1.5">
+                <Icon
+                  aria-hidden="true"
+                  className={`h-4.5 w-4.5 ${detail.status === 'complete' ? 'text-md-primary' : ''}`}
+                />
+                {label}
+              </span>
+            );
+          })()}
+          <span aria-hidden="true">·</span>
+          <span>
+            {detail.counts.accepted} of {detail.counts.required} accepted
+          </span>
+          {detail.counts.needsReview > 0 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{detail.counts.needsReview} needs review</span>
+            </>
+          )}
+          {detail.counts.changesRequested > 0 && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{detail.counts.changesRequested} changes requested</span>
+            </>
+          )}
+        </p>
+
+        {error && (
+          <p role="alert" className="mt-4 flex items-center gap-2 text-body-small text-md-error">
+            <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+            {error}
+          </p>
+        )}
+
         <h2 className="mt-8 text-title-medium text-md-on-surface">Recipient access</h2>
         <Card variant="outlined" className="mt-3">
-          {error && (
-            <p role="alert" className="mb-3 flex items-center gap-2 text-body-small text-md-error">
-              <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
-              {error}
-            </p>
-          )}
-
           {flash ? (
             <>
               <p className="flex items-center gap-2 text-title-medium text-md-on-surface">
@@ -144,20 +153,11 @@ export default async function CaseDetailPage({
 
         <h2 className="mt-8 text-title-medium text-md-on-surface">Requirements</h2>
         <ul className="mt-3 flex flex-col gap-3">
-          {detail.requirements.map(({ requirement, assignment }) => {
-            const StatusIcon = assignment ? FULFILMENT_ICON[assignment.fulfilmentStatus] : null;
-            return (
-              <li key={requirement.id}>
-                <Card className="flex items-center justify-between">
-                  <p className="text-body-medium text-md-on-surface">{requirement.title}</p>
-                  <span className="flex items-center gap-1.5 text-label-large text-md-on-surface-variant">
-                    {StatusIcon && <StatusIcon aria-hidden="true" className="h-4.5 w-4.5" />}
-                    {assignment ? FULFILMENT_LABEL[assignment.fulfilmentStatus] : '—'}
-                  </span>
-                </Card>
-              </li>
-            );
-          })}
+          {detail.requirements.map((item) => (
+            <li key={item.requirement.id}>
+              <ReviewItem caseId={caseId} item={item} />
+            </li>
+          ))}
         </ul>
       </main>
     </>
