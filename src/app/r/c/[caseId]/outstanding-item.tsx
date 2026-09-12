@@ -1,5 +1,6 @@
-import { MdErrorOutline } from 'react-icons/md';
+import { MdDescription, MdErrorOutline } from 'react-icons/md';
 import type { RecipientRequirementItem } from '@/lib/domain/recipient-view';
+import { answerToFormValue, formatAnswerValue } from '@/lib/answer-format';
 import { AnswerField } from './answer-field';
 import { UploadField } from './upload-field';
 import { AcknowledgeControl } from './acknowledge-control';
@@ -12,6 +13,12 @@ import { NotApplicableControl } from './not-applicable-control';
  * AcknowledgeControl. Deliberately not wrapped in a Card — a dense list
  * of items in a plain row is the right shape here (design §48), not a
  * stack of cards.
+ *
+ * Stage 7: a `changes_requested` item also shows what was actually sent
+ * — the recipient shouldn't have to remember their last answer or
+ * re-find the file they uploaded just to see what's being corrected —
+ * and prefills a text-like AnswerField with it so a one-word fix isn't a
+ * full retype.
  */
 export function OutstandingItem({
   caseId,
@@ -20,9 +27,11 @@ export function OutstandingItem({
   caseId: string;
   item: RecipientRequirementItem;
 }) {
-  const { requirement, assignment, latestReview } = item;
-  const draftValue = typeof assignment.draftValue === 'string' ? assignment.draftValue : '';
+  const { requirement, assignment, latestSubmission, latestReview } = item;
   const changesRequested = latestReview?.reviewStatus === 'changes_requested';
+  const previousAnswer = changesRequested ? latestSubmission?.answer : null;
+  const draftValue = typeof assignment.draftValue === 'string' ? assignment.draftValue : '';
+  const initialValue = draftValue || (previousAnswer ? answerToFormValue(previousAnswer) : '');
 
   return (
     <div>
@@ -52,6 +61,18 @@ export function OutstandingItem({
         </p>
       )}
 
+      {changesRequested && latestSubmission?.fileAsset && (
+        <p className="mt-2 flex items-center gap-2 text-body-small text-md-on-surface-variant">
+          <MdDescription aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+          <span className="break-all">You sent: {latestSubmission.fileAsset.originalFilename}</span>
+        </p>
+      )}
+      {changesRequested && previousAnswer && (
+        <p className="mt-2 text-body-small text-md-on-surface-variant">
+          You sent: {formatAnswerValue(previousAnswer)}
+        </p>
+      )}
+
       {requirement.actionType === 'upload' && (
         <UploadField caseId={caseId} assignmentId={assignment.id} />
       )}
@@ -63,7 +84,7 @@ export function OutstandingItem({
           answerFieldType={requirement.answerFieldType}
           required={requirement.required}
           options={requirement.options}
-          initialValue={draftValue}
+          initialValue={initialValue}
         />
       )}
 

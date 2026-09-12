@@ -1,75 +1,13 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { setupCaseForRecipientTests } from './helpers';
 
 /**
  * Stage 6 verification (plans/stage6.md + CHECKLIST.md). Builds a case
  * with one upload requirement and two answer requirements (yes_no,
- * date), then exercises the recipient page end to end.
- *
- * The recipient link is revealed via a signed flash cookie and a
- * `<code>` element on the case page — read the same way
- * stage5-templates-cases.spec.ts does.
+ * date), then exercises the recipient page end to end. Setup extracted
+ * into ./helpers.ts (Stage 7) once stage7-review.spec.ts needed the same
+ * flow with a different requirement mix.
  */
-async function setupCaseForRecipientTests(
-  page: Page,
-  emailPrefix: string,
-): Promise<{ link: string; caseUrl: string }> {
-  const email = `${emailPrefix}-${Date.now()}@example.com`;
-  const password = 'correcthorsebatterystaple';
-
-  await page.goto('/sign-up');
-  await page.fill('#name', 'Stage 6 Tester');
-  await page.fill('#email', email);
-  await page.fill('#password', password);
-  await page.fill('#workspaceName', 'Stage 6 Workspace');
-  await page.click('button[type=submit]');
-  await page.waitForURL('**/dashboard');
-
-  await page.goto('/templates/new');
-  await page.fill('#name', 'Stage 6 Onboarding');
-
-  // Row 1: upload (the default action type — left as-is).
-  await page.getByLabel('Requirement 1 title').fill('Bank statement');
-
-  // Row 2: answer / yes_no. Selected while it's the only "Answer type"
-  // select on the page, since neither row exposes a per-row accessible
-  // name for that control.
-  await page.click('button:has-text("Add requirement")');
-  await page.getByLabel('Requirement 2 title').fill('Any new loans?');
-  await page
-    .getByRole('radiogroup', { name: 'Requirement 2 action type' })
-    .getByRole('radio', { name: 'Answer' })
-    .click();
-  await page.getByLabel('Answer type').selectOption('yes_no');
-
-  // Row 3: answer / date. Now two "Answer type" selects exist — this one
-  // is the one just added, last in DOM order.
-  await page.click('button:has-text("Add requirement")');
-  await page.getByLabel('Requirement 3 title').fill('Effective date');
-  await page
-    .getByRole('radiogroup', { name: 'Requirement 3 action type' })
-    .getByRole('radio', { name: 'Answer' })
-    .click();
-  await page.getByLabel('Answer type').last().selectOption('date');
-
-  await page.click('button:has-text("Create template")');
-  await page.waitForURL(/\/templates\/[^/]+$/);
-  await page.click('button:has-text("Publish")');
-
-  await page.goto('/cases/new');
-  await page.selectOption('#templateId', { label: 'Stage 6 Onboarding' });
-  await page.fill('#name', 'Stage 6 Case');
-  await page.fill('#displayName', 'Stage 6 Recipient');
-  await page.fill('#email', 'recipient@example.com');
-  await page.click('button:has-text("Create case")');
-  await page.waitForURL(/\/cases\/[^/]+$/);
-
-  const linkText = await page.locator('code').textContent();
-  if (!linkText) throw new Error('Recipient link not found on the case page.');
-  const caseUrl = new URL(page.url()).origin + new URL(page.url()).pathname;
-
-  return { link: linkText.trim(), caseUrl };
-}
-
 test.describe('Stage 6 — recipient page', () => {
   test('mail scanner: a plain GET leaves every assignment pending; a real browser opening the link is recorded as viewed', async ({
     page,
@@ -142,8 +80,13 @@ test.describe('Stage 6 — recipient page', () => {
     await expect(downloadLink).toBeVisible();
     await expect(recipientPage.getByText('Yes')).toBeVisible();
 
+    // Stage 7: a submitted item now shows as "Needs review" on the
+    // requester page (a real review decision is required before it
+    // counts as accepted) rather than the old bare "Submitted" fulfilment
+    // label. Scoped to the requirement cards (each its own <li>) because
+    // the page's own status summary line can also say "Needs review".
     await page.goto(caseUrl);
-    await expect(page.getByText('Submitted')).toHaveCount(3);
+    await expect(page.locator('li').filter({ hasText: 'Needs review' })).toHaveCount(3);
   });
 
   test('resumability: a draft answer survives a reload and a fresh session', async ({ page }) => {

@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { localFilePath, verifyLocalStorageToken } from '@/lib/adapters/storage.local';
+import { contentDispositionHeader } from '@/lib/adapters/storage';
 
 /**
  * Counterpart to storage.local.ts's presignDownload. Every real download
@@ -44,7 +45,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   return new NextResponse(stream, {
     headers: {
       'Content-Length': String(info.size),
-      'Content-Disposition': 'attachment',
+      'Content-Disposition': contentDispositionHeader(payload.filename),
     },
   });
 }

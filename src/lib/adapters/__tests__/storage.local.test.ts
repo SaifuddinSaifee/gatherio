@@ -99,4 +99,30 @@ describe('local storage adapter', () => {
     const adapter = localStorageAdapter();
     await expect(adapter.complete('never/written/file.pdf')).rejects.toThrow();
   });
+
+  it('carries the filename through a presigned download token', async () => {
+    const { localStorageAdapter, verifyLocalStorageToken } = await import('../storage.local');
+    const adapter = localStorageAdapter();
+
+    const download = await adapter.presignDownload({
+      key: 'ws-1/case-1/sv-1/file.pdf',
+      filename: 'statement-v1.pdf',
+    });
+    const token = download.url.split('/api/download/')[1]!;
+    const payload = verifyLocalStorageToken(token);
+
+    expect(payload.action).toBe('download');
+    expect(payload.filename).toBe('statement-v1.pdf');
+  });
+
+  it('omits the filename from the token when none is given', async () => {
+    const { localStorageAdapter, verifyLocalStorageToken } = await import('../storage.local');
+    const adapter = localStorageAdapter();
+
+    const download = await adapter.presignDownload({ key: 'ws-1/case-1/sv-1/file.pdf' });
+    const token = download.url.split('/api/download/')[1]!;
+    const payload = verifyLocalStorageToken(token);
+
+    expect(payload.filename).toBeUndefined();
+  });
 });

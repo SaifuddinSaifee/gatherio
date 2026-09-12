@@ -19,6 +19,8 @@ interface TokenPayload {
   action: 'upload' | 'download';
   maxBytes?: number;
   contentType?: string;
+  /** Download tokens only: the name to serve the file as, not the storage key. */
+  filename?: string;
   exp: number;
 }
 
@@ -82,9 +84,9 @@ export function localStorageAdapter(): StorageAdapter {
       return result;
     },
 
-    async presignDownload({ key, expiresInSeconds = 300 }) {
+    async presignDownload({ key, filename, expiresInSeconds = 300 }) {
       const exp = Date.now() + expiresInSeconds * 1000;
-      const token = sign({ key, action: 'download', exp });
+      const token = sign({ key, action: 'download', filename, exp });
       const result: PresignDownloadResult = {
         url: `${env.APP_URL}/api/download/${token}`,
         expiresAt: new Date(exp),

@@ -352,10 +352,14 @@ export async function requestUploadAction(
   return { uploadUrl: presigned.url, method: presigned.method, headers: presigned.headers, ticket };
 }
 
-const CONFIRM_UPLOAD_ERROR_MESSAGES: Record<'too_large' | 'infected' | 'not_found', string> = {
+const CONFIRM_UPLOAD_ERROR_MESSAGES: Record<'too_large' | 'infected' | 'not_found' | 'closed', string> = {
   too_large: `This file is larger than the ${Math.floor(env.UPLOAD_MAX_BYTES / (1024 * 1024))} MB limit.`,
   infected: "This file didn't pass our virus scan. Try a different copy, or contact the sender.",
   not_found: 'This upload could not be found. Please try again.',
+  // Stage 7: the assignment closed (approved, or awaiting review) between
+  // starting this upload and it finishing — e.g. the requester approved
+  // the item as-is while the upload was still in flight.
+  closed: 'This item has already been received — refresh the page to see its current status.',
 };
 
 export async function confirmUploadAction(input: {
