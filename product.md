@@ -1,6 +1,6 @@
 # **What is Gather.io?**
 
-**Working name:** Gather.io (brand and domain decision deliberately open) **Owner:** Saifuddin Saifee **Status:** Pre-build. Zero primary customer interviews completed. **Version:** 1.0 **Date:** August 2026
+**Working name:** Gather.io (brand and domain decision deliberately open) **Owner:** Saifuddin Saifee **Status:** In build. The core collection loop (templates → cases → recipient submission → review and rework) is built and verified; reminders, dashboard/export, and roles are not (build status lives in [CHECKLIST.md](CHECKLIST.md)). Informal problem conversations held (a banker and a few others); no structured discovery interviews or paid pilots yet. **Version:** 1.1 **Date:** September 2026
 
 Gather.io is **external request completion software**.
 
@@ -29,6 +29,48 @@ The emphasis matters and it is the whole product argument. Every competitor in t
 **Recommended path.** Build the horizontal engine internally. Launch on **recurring professional-services document cycles**, specifically accounting and tax practices, narrowed to the monthly and quarterly close rather than "another accounting client portal." The recurring nature of that work exercises the strongest part of the product from day one, the buyer is a single person with a card, there is no procurement cycle, and the segment is reachable by hand. Keep vendor onboarding and subcontractor compliance as the expansion path once the engine works and paying customers exist.
 
 **Decision:** Conditional GO, collect-first, vertical launch. NO-GO on the generic horizontal product and NO-GO on native signing infrastructure. Kill condition: fewer than three paid live pilots from the first 20 to 25 qualified interviews.
+
+---
+
+## **The product as built (September 2026)**
+
+This section describes what the product actually is today, as opposed to what the rest of this document argues it should become. It is a description, not a build log — [CHECKLIST.md](CHECKLIST.md) is the authoritative record of what is built and verified.
+
+### The two surfaces
+
+**The requester app** (authenticated, one workspace per sign-up today):
+
+* **Templates.** A requester builds a reusable checklist on one page: a name plus an ordered list of requirements, each an **upload**, an **answer** (short text, long text, date, choice, or yes/no), or an **acknowledgement**, marked required or optional, with optional instructions, acceptance criteria, and a sensitivity tag. A template is never saved with zero requirements.
+* **Template versions.** A version is a draft until published; once published it is immutable. Changing a published template means explicitly creating a new draft version, which copies the requirements forward. Templates can be archived, which hides them from case creation without losing history.
+* **Cases.** A case is created from a published template for one counterparty. Creating it copies the template's requirements into the case — later template edits never reach back into a live case — emails the counterparty an invitation, and shows the requester the link once. The requester can **resend** the link or **revoke and reissue** it (which kills every earlier link for that case).
+* **Review.** For each submitted item the requester can **approve** it or **request changes** with a written reason. Decisions can be reversed: an approved item can be reopened, and a changes-requested item can be approved as it stands. Files download under their real filename.
+
+**The recipient page** (no account, reached from the emailed link):
+
+* Outstanding items first; completed items collapsed underneath with what was received and when (§4.4).
+* Designed for a phone first: works at 360px wide, works without JavaScript for answers and acknowledgements, and shows upload progress with automatic retries on a weak connection.
+* Resumable: in-progress answers are saved as drafts and survive a reload or a later visit from the same link.
+* A changes-requested item reappears as outstanding with the requester's reason shown directly above it.
+* An optional item can be explicitly declared **"doesn't apply"** rather than left blank.
+
+### Product rules settled during the build
+
+These are decisions made while building that the rest of this document did not previously state:
+
+* **"Case" is the word.** The UI and the code both say *case*, never *packet*, *collection*, or *request*, per §5's "pick one word."
+* **What gets reviewed.** Uploads, answers, and "doesn't apply" declarations need a requester decision. Acknowledgements are accepted automatically — reviewing someone's "I confirm" adds a step without adding judgement.
+* **An empty answer is never a valid answer.** A blank field is invalid even on an optional item; not answering an optional item is a deliberate "doesn't apply" declaration, so the requester can always tell "chose not to" apart from "hasn't yet."
+* **Rework reopens exactly one item.** Requesting changes reopens that single item for that single recipient; nothing else on the case moves. The resubmission is a new version linked to the one it replaces, and the earlier version stays in history, untouched.
+* **Decisions are reversible; the latest one wins.** Each decision is a new record, never an edit of an old one, so the full history of who decided what, and when, is kept.
+* **No separate "changes requested" email.** The reason travels in the next reminder for that item (Stage 8), so the recipient receives one message about what's missing rather than one per decision.
+* **When a case is complete.** A case is complete only when every required item is approved (or auto-accepted, or waived) and nothing is waiting for review. Reopening any item makes the case incomplete again.
+* **A decided item is closed to the recipient.** Once an item is approved or waiting for review, the recipient can no longer change it; they can act on it again only if the requester reopens it.
+* **Hard rejection is not offered.** The data model has a terminal `rejected` review state, but the requester can only approve or request changes. A rejection with no way back needs its own recipient-facing copy and rules before it is exposed.
+* **Link security in practice** — see the implementation notes in §4.7.
+
+### What it does not yet do
+
+No automated reminders; no requester dashboard showing what is blocking each case; no packet export; single party per case only; one user per workspace with an owner/member split instead of the five-role ladder; no step-up authentication beyond the link itself; malware scanning and production email delivery are interfaces with development stand-ins. Multi-party cases, carry-forward, and expiry — the three structural differentiators argued for above — exist as schema seams, with no product behaviour yet.
 
 ---
 
@@ -176,6 +218,8 @@ The target workflows do not operate through files alone. Vendor onboarding needs
 
 A Typeform competitor is not required. Five field types are sufficient initially: short text, long text, date, choice, and yes/no confirmation.
 
+"Confirm that an item does not apply" is its own explicit action on the recipient page, not an empty answer — see "Product rules settled during the build" above.
+
 Without them, customers run a Google Form alongside Gather and the entire "one link" value proposition collapses. This is not a nice-to-have; it is load-bearing.
 
 ### **4.2 Your status enum mixes different dimensions**
@@ -263,6 +307,14 @@ Authentication should therefore be risk-based:
 
 **One implementation detail that will otherwise cost a support crisis:** never consume or permanently activate a magic link because an HTTP GET occurred. Corporate email scanners pre-fetch links automatically. A scanner must not invalidate a recipient's link, record consent, or create a signing event. Use the link to create a short-lived session, then require an explicit user action for anything consequential.
 
+**How the link works as built:**
+
+* Opening the link writes nothing — not "viewed," not an audit event. It sets a session for that one case and redirects to a clean URL, so the raw token leaves the address bar, browser history, and `Referer` after one hop. "Viewed" is recorded only by the real browser rendering the page.
+* The token is stored only as a hash, expires, and can be revoked. Revocation is checked on **every** recipient action, not only when the session was created, so a revoked link stops working even in a tab that is already open.
+* Each case gets its own session, so a recipient holding links from two cases never has one overwrite the other.
+* The requester sees the link once, at case creation, and never in a URL; afterwards they can resend it or revoke every existing link and issue a new one.
+* Each requirement carries a `sensitivity` tag chosen when the template is built, because which items are tax or identity documents can't be reconstructed later. Today every case is issued at the lowest rung (link only) regardless of that tag; the tag is what the higher rungs will read once step-up authentication exists.
+
 ### **4.8 The freelancer/agency wedge is easier, but not better**
 
 The advantages are real: easy founder access, short sales cycles, low credential burden, an understandable flow, and the ability to dogfood.
@@ -281,21 +333,24 @@ The disadvantages matter more: low urgency, low willingness to pay, high churn, 
 
 Organization (enterprise only, dormant at launch)  
 └── Workspace (the isolation boundary — every table carries `workspace_id`)  
-    └── WorkflowTemplate (versioned)  
-        └── RequirementDefinition
+    └── WorkflowTemplate  
+        └── TemplateVersion (draft → active; immutable once active)  
+            └── RequirementDefinition
 
-Case / Packet  
-├── Party / Recipient  
+Case (created from one active TemplateVersion)  
+├── Party / Recipient ── LedgerSubject (persists across cases)  
+├── AccessToken (the magic link, per party)  
 ├── Requirement  
 │   └── Assignment  
 │       └── SubmissionVersion  
+│           ├── SubmissionAnswer  
 │           ├── FileAsset  
 │           ├── Review  
 │           └── DocumentValidity  
 ├── ReminderPolicy  
 └── AuditEvent
 
-"Case" or "Packet" is clearer than having both Collection and Request. Pick one word and use it everywhere, including in the UI.
+"Case" or "Packet" is clearer than having both Collection and Request. Pick one word and use it everywhere, including in the UI. **Decided: "Case."**
 
 ## **Core entities**
 
@@ -309,27 +364,35 @@ Case / Packet
 
 **CaseGrant**: per-case content access for a `restricted` case. `id, workspace_id, case_id, user_id, granted_by, granted_at, revoked_at, reason, source (explicit|break_glass)`
 
-**WorkflowTemplate**: a reusable definition such as "Monthly Bookkeeping Close" or "Vendor Onboarding." `id, workspace_id, name, version, status, default_access_mode`
+**WorkflowTemplate**: a reusable definition such as "Monthly Bookkeeping Close" or "Vendor Onboarding." `id, workspace_id, name, archived_at, default_access_mode`
 
-**Case / Packet**: one live instance, such as "Q2 Close: Acme Traders." `id, workspace_id, template_version_id, name, overall_status, due_at, created_by, completed_at, access_mode (workspace|restricted, snapshotted from the template)`
+**TemplateVersion**: one version of a template's requirement list. `id, template_id, version, status (draft|active|archived)`. Only a draft can be edited; publishing makes it active and immutable, and only an active version can start a case. This is what guarantees a case always points at requirements that can never change underneath it.
+
+**RequirementDefinition**: one requirement within a template version — the same fields as `Requirement` below, plus `visibility_condition` (a reserved, currently unevaluated seam for bounded conditional display).
+
+**Case**: one live instance, such as "Q2 Close: Acme Traders." `id, workspace_id, template_version_id, name, due_at, created_by, completed_at, access_mode (workspace|restricted, snapshotted from the template)`. There is no stored status column: a case's overall status is computed from its assignments every time, so it can never disagree with them. `completed_at` is set when the case completes and cleared again if an item is reopened.
 
 **Party**: an external person or organization. `id, case_id, party_type, display_name, email, phone, organization_name, ledger_subject_id`
 
-The `ledger_subject_id` is what allows a party to persist across recurring cases and makes carry-forward possible.
+**LedgerSubject**: the persistent identity of a counterparty (a client, vendor, worker, property) within a workspace, independent of any one case. `id, workspace_id, subject_type, display_name`. A party's `ledger_subject_id` is what allows it to persist across recurring cases and makes carry-forward possible; `DocumentValidity` anchors to it rather than to the case (§4.3).
 
-**Requirement**: one thing that must be completed. `id, case_id, action_type (upload|answer|sign|acknowledge), title, instructions, required, due_at, sequence, acceptance_criteria`
+**AccessToken**: the recipient's magic link. `id, case_id, party_id, token_hash, auth_level, expires_at, revoked_at`. Only the hash is stored, never the raw token. `auth_level` is the §4.7 ladder rung this link grants.
 
-**Assignment**: connects a requirement to one or more parties. `id, requirement_id, party_id, fulfilment_status, viewed_at, submitted_at`
+**Requirement**: one thing that must be completed, copied from a `RequirementDefinition` when the case is created. `id, case_id, action_type (upload|answer|sign|acknowledge), answer_field_type (short_text|long_text|date|choice|yes_no), options (the choices, for choice fields), title, instructions, required, due_at, sequence, acceptance_criteria, sensitivity`
+
+**Assignment**: connects a requirement to one or more parties. `id, requirement_id, party_id, fulfilment_status, viewed_at, submitted_at, draft_value, draft_updated_at`. The draft columns hold an in-progress answer so the recipient page is resumable.
 
 This entity is non-negotiable, because one recipient can hold multiple requirements, one requirement can involve multiple recipients, and assignment-specific status can differ. Collapsing assignment into requirement is the single most expensive shortcut available here.
 
-**SubmissionVersion**: never overwrite a submitted file or answer. `id, assignment_id, version_number, submission_type, submitted_at, submitted_by_party_id, supersedes_submission_id`
+**SubmissionVersion**: never overwrite a submitted file or answer. `id, assignment_id, version_number, submitted_at, submitted_by_party_id, supersedes_submission_id`. `supersedes_submission_id` links a resubmission to the version it replaces, so the rework history of an item is a chain rather than a pile.
 
-**FileAsset** `id, submission_version_id, storage_key, original_filename, mime_type, byte_size, sha256_hash, malware_scan_status`
+**SubmissionAnswer** `id, submission_version_id, value` — the answer, acknowledgement, or "doesn't apply" declaration carried by a version.
 
-**Review** `id, submission_version_id, review_status, reviewed_by, reviewed_at, reason`
+**FileAsset** `id, submission_version_id, storage_key, original_filename, mime_type, byte_size, sha256_hash, malware_scan_status`. Size, type, and hash are measured on the server after upload, never taken from what the browser claims; a file can't be downloaded until its scan status is clean.
 
-The `reason` field is not a note. It is the input to the next reminder for that assignment. This is what makes the rework loop a first-class object rather than a status change.
+**Review** `id, submission_version_id, review_number, review_status, reviewed_by, reviewed_at, reason`
+
+The `reason` field is not a note. It is the input to the next reminder for that assignment. This is what makes the rework loop a first-class object rather than a status change. It is required, enforced by the database, whenever changes are requested. Reviews are only ever added, never edited: `review_number` orders them, and the latest one is the item's current decision, which is how a decision can be reversed without losing its history.
 
 **DocumentValidity** `id, submission_version_id, valid_from, expires_at, validity_status, responsible_user_id, renewal_case_id`
 
@@ -629,6 +692,20 @@ Because users will upload tax forms, identity documents, contracts, and financia
 
 Competitor positioning shows buyers already expect this: Content Snare advertises ISO 27001, FileInvite carries SOC 2 Type II with malware detection, MFA, and audit controls. A new entrant will be asked.
 
+## **Abuse of the platform itself**
+
+Everything above protects customers' data. A separate risk points the other way: **Gather can be used as a weapon against recipients.** A product that lets anyone sign up and send a professional-looking "please upload your identity documents and bank statements" link to a stranger is, unmodified, an excellent phishing kit. The no-account, one-link recipient experience that makes the product good also makes a malicious request look legitimate. This is especially sharp in India, where KYC-document fraud is common and recipients are used to being asked for PAN, Aadhaar, and bank statements over a link.
+
+The consequences fall on Gather, not only on the fraudster's victims: sending domains get blocklisted, which breaks delivery for every legitimate customer; the brand becomes associated with scams; and the recipient's trust in "a link that asks for documents" — the thing the product relies on — erodes.
+
+Controls under consideration (none built):
+
+* **Requester verification before volume.** An unverified workspace can send only a small number of cases (for example, 10) before verifying who the requester is — for a business, GST registration or equivalent. Consistent with the rest of this document, verification must not involve collecting or storing Aadhaar (see the India note above).
+* **Branding as a trust signal.** Showing the requesting organisation's verified name and branding on the recipient page and in emails helps recipients tell a genuine request from an imitation. This is a trust feature as much as a cosmetic one; custom branding beyond the verified name is an enterprise-tier candidate.
+* **Rate limits and anomaly detection** on case creation and invites, and a visible "report this request" path for recipients.
+
+This is a gate on **open self-serve sign-up**, not on hand-onboarded pilots, where the requester is known personally.
+
 **India-specific note.** Under the DPDP Act, storing financial statements, identity documents, and salary records carries real obligations. Avoid handling Aadhaar entirely in early versions; it is its own regulatory regime with additional restrictions and is not a fight worth having in a first product.
 
 ---
@@ -846,6 +923,17 @@ The market validation report's Phase 1 contains roughly seventeen items. That is
 * The empty `Organization` table and `workspace.organization_id` — shipped dormant, before there is data to back-fill
 
 **Do not build:** generic automation builder, marketplace, payments, AI extraction, dozens of integrations, persistent recipient accounts, advanced analytics, full procurement, native signing, a general conditional-logic / rules engine (the bounded per-event message lookup in §5 is not this), in-app chat, document generation, organization-level UI or roles, teams as a hierarchy level, custom roles, cross-workspace carry-forward, any role for Gather's own staff.
+
+## **Ideas under consideration (not yet placed in a phase)**
+
+Raised in early problem conversations and captured in `ideas.md`. None is built, and none is yet assigned to a phase — each depends on which launch market is chosen and what pilots show. They are recorded here so they are weighed against the phases above rather than added ad hoc.
+
+* **Passphrase-protected cases.** The requester sets a passphrase on a case and shares it with the recipient separately (by phone, say); the link alone is then not enough to open the case. This is a form of the §4.7 step-up rung ("magic link plus a second factor"), with a knowledge factor instead of an OTP. It's simpler to ship than OTP and needs no SMS delivery, at the cost of the requester having to share a secret out of band. Useful for exactly the documents §4.7 marks as higher-risk.
+* **Stopping fraud and abuse.** Requester verification before sending more than a small number of cases, verified branding, and rate limits — see "Abuse of the platform itself" in §6.
+* **Custom branding** (enterprise). The requester's logo and name on the recipient page and emails, doubling as an anti-phishing trust signal.
+* **A mobile-friendly requester app, especially for cases.** The recipient page is already built mobile-first; the requester app is currently designed for a desktop. Whether requesters check and review cases from a phone is a question for pilot observation.
+* **A role management dashboard.** Already specified as Phase 1b ("Role management UI, member invitations"); listed here because it came up independently in conversations.
+* **AI review of submissions.** Checking a submitted document or answer against the requirement's acceptance criteria and the issuer's rules — right document type, right period, right name, legible, not expired — and telling the recipient **at upload time**, before the requester ever sees it. This goes straight at the costliest part of the loop, the rework round trip ("they sent the wrong month"): a problem caught while the recipient is still on the page never becomes a changes-requested cycle days later. It also has a requester-side form: an AI pre-review that suggests approve / request changes with a drafted reason. **This conflicts with "AI extraction" in the Do-not-build list above**, which was a scope call made before this use case was considered. Whether it's in scope needs to be decided explicitly, not assumed. The existing schema already anticipates it (immutable submission versions, file hashes). The AI would *advise*; approving or requesting changes would stay a human decision.
 
 ## **Phase 1.5: validity and renewal**
 
