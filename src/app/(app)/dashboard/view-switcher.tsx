@@ -1,32 +1,29 @@
 'use client';
 
-import { useOptimistic, useTransition } from 'react';
+import type { IconType } from 'react-icons';
+import { MdTableChart, MdViewAgenda } from 'react-icons/md';
 import { SegmentedButtons } from '@/components/ui/segmented-buttons';
 import type { DashboardView } from '@/lib/dashboard-prefs';
-import { setDashboardViewAction } from './actions';
 
-const OPTIONS: { value: DashboardView; label: string }[] = [
-  { value: 'table', label: 'Table' },
-  { value: 'list', label: 'List' },
+const OPTIONS: { value: DashboardView; label: string; icon: IconType }[] = [
+  { value: 'table', label: 'Table', icon: MdTableChart },
+  { value: 'list', label: 'List', icon: MdViewAgenda },
 ];
 
-export function ViewSwitcher({ view }: { view: DashboardView }) {
-  const [, startTransition] = useTransition();
-  const [optimisticView, setOptimisticView] = useOptimistic(view);
-
+export function ViewSwitcher({
+  view,
+  onChange,
+}: {
+  view: DashboardView;
+  onChange: (view: DashboardView) => void;
+}) {
   return (
     <SegmentedButtons
       aria-label="Dashboard view"
       options={OPTIONS}
-      value={optimisticView}
+      value={view}
       size="sm"
-      onChange={(next) => {
-        if (next === optimisticView) return;
-        startTransition(async () => {
-          setOptimisticView(next);
-          await setDashboardViewAction(next);
-        });
-      }}
+      onChange={onChange}
     />
   );
 }

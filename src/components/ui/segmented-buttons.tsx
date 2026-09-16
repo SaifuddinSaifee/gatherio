@@ -1,11 +1,14 @@
 'use client';
 
+import type { IconType } from 'react-icons';
 import { MdCheck } from 'react-icons/md';
 import { cn } from '@/lib/cn';
 
 interface SegmentedButtonOption<T extends string> {
   value: T;
   label: string;
+  /** Leading icon. The selected segment shows the checkmark in its place. */
+  icon?: IconType;
 }
 
 type SegmentedButtonsSize = 'sm' | 'md';
@@ -38,6 +41,8 @@ const SIZE_STYLES: Record<SegmentedButtonsSize, { root: string; segment: string;
  *
  * Selected segment shows a leading checkmark, not color alone (§72) —
  * container/label swap to secondary-container / on-secondary-container.
+ * A segment with its own icon shows that icon until selected, when the
+ * checkmark replaces it (M3's icon + label segment behavior).
  *
  * Implemented as `role="radio"` buttons in a `role="radiogroup"` (single-
  * select semantics per ARIA authoring practices). Each button keeps its
@@ -63,6 +68,7 @@ export function SegmentedButtons<T extends string>({
     >
       {options.map((option) => {
         const selected = option.value === value;
+        const Icon = selected ? MdCheck : option.icon;
         return (
           <button
             key={option.value}
@@ -86,7 +92,7 @@ export function SegmentedButtons<T extends string>({
               )}
             />
             <span className="relative z-10 flex items-center gap-1.5">
-              {selected && <MdCheck aria-hidden="true" className={sizeStyles.icon} />}
+              {Icon && <Icon aria-hidden="true" className={sizeStyles.icon} />}
               {option.label}
             </span>
           </button>

@@ -63,8 +63,8 @@ import {
 } from '@/lib/domain/dashboard-table';
 import {
   DASHBOARD_HIDDEN_COLUMNS_COOKIE,
-  DASHBOARD_PREF_MAX_AGE_SECONDS,
   serializeHiddenColumns,
+  writeDashboardPrefCookie,
 } from '@/lib/dashboard-prefs';
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format-time';
 import { cn } from '@/lib/cn';
@@ -453,8 +453,7 @@ export function CasesTable({ rows, now, initialState, hiddenColumns }: CasesTabl
   useEffect(() => {
     if (hiddenCookieValue === initialHiddenCookieValue.current) return;
     initialHiddenCookieValue.current = hiddenCookieValue;
-    const secure = window.location.protocol === 'https:' ? '; secure' : '';
-    document.cookie = `${DASHBOARD_HIDDEN_COLUMNS_COOKIE}=${encodeURIComponent(hiddenCookieValue)}; path=/; max-age=${DASHBOARD_PREF_MAX_AGE_SECONDS}; samesite=lax${secure}`;
+    writeDashboardPrefCookie(DASHBOARD_HIDDEN_COLUMNS_COOKIE, hiddenCookieValue);
   }, [hiddenCookieValue]);
 
   // A server refresh (e.g. after sending reminders) hands over new rows; selections from before it no longer mean anything.
