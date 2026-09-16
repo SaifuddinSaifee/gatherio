@@ -1,7 +1,6 @@
 import { cookies } from 'next/headers';
 import { MdAdd, MdError, MdFolderOpen, MdSend } from 'react-icons/md';
 import { getCurrentSession } from '@/db/session';
-import { getWorkspaceById } from '@/db/workspace';
 import { listCases } from '@/lib/domain/case';
 import { parseDashboardFilter, sortForDashboard } from '@/lib/domain/dashboard';
 import { parseCaseTableState, toCaseTableRow } from '@/lib/domain/dashboard-table';
@@ -11,7 +10,6 @@ import {
   parseDashboardView,
   parseHiddenColumns,
 } from '@/lib/dashboard-prefs';
-import { AppHeader } from '@/components/app-header';
 import { Card } from '@/components/ui/card';
 import { ButtonLink } from '@/components/ui/button';
 import { CasesList } from './cases-list';
@@ -40,13 +38,19 @@ function bulkReminderNotice(params: SearchParams): { text: string; failed: boole
   const failed = count(params.failed);
   const parts = [`Sent ${plural(sent, 'reminder', 'reminders')}.`];
   if (skipped > 0) {
-    parts.push(`${plural(skipped, 'case was', 'cases were')} skipped — complete, waiting on your review, no email, or reminded recently.`);
+    parts.push(
+      `${plural(skipped, 'case was', 'cases were')} skipped — complete, waiting on your review, no email, or reminded recently.`,
+    );
   }
   if (failed > 0) parts.push(`${plural(failed, 'email', 'emails')} failed to send — try again.`);
   return { text: parts.join(' '), failed: failed > 0 };
 }
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   const session = await getCurrentSession();
   if (!session) return null; // AppLayout already redirects; narrows the type below.
 
@@ -55,75 +59,80 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const view = parseDashboardView(cookieStore.get(DASHBOARD_VIEW_COOKIE)?.value);
   const now = new Date();
 
-  const [workspace, allCases] = await Promise.all([
-    getWorkspaceById(session.workspaceId),
-    listCases(session.workspaceId, now),
-  ]);
+  const allCases = await listCases(session.workspaceId, now);
 
   const notice = first(params.notice);
   const error = first(params.error);
   const noticeCaseId = first(params.caseId);
-  const noticeCase = noticeCaseId ? allCases.find((row) => row.case.id === noticeCaseId) : undefined;
+  const noticeCase = noticeCaseId
+    ? allCases.find((row) => row.case.id === noticeCaseId)
+    : undefined;
   const bulkNotice = notice === 'reminders_sent' ? bulkReminderNotice(params) : null;
   const wide = view === 'table';
 
   return (
-    <>
-      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} wide={wide} />
-      <main className={`mx-auto ${wide ? 'max-w-7xl' : 'max-w-4xl'} px-6 py-12`}>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-headline-small font-medium text-md-on-surface">Cases</h1>
-          <div className="flex flex-wrap items-center gap-3">
-            {allCases.length > 0 && <ViewSwitcher view={view} />}
-            <ButtonLink href="/cases/new" variant="filled">
-              <MdAdd aria-hidden="true" className="h-4.5 w-4.5" />
-              New case
-            </ButtonLink>
-          </div>
+    <main className={`mx-auto ${wide ? 'max-w-7xl' : 'max-w-4xl'} px-6 py-12`}>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-headline-small font-medium text-md-on-surface">Cases</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          {allCases.length > 0 && <ViewSwitcher view={view} />}
+          <ButtonLink href="/cases/new" variant="filled">
+            <MdAdd aria-hidden="true" className="h-4.5 w-4.5" />
+            New case
+          </ButtonLink>
         </div>
+      </div>
 
-        {notice === 'reminder_sent' && (
-          <p role="status" className="mt-4 flex items-center gap-2 text-body-small text-md-primary">
-            <MdSend aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
-            Reminder sent{noticeCase ? ` for ${noticeCase.case.name}` : ''}.
-          </p>
-        )}
-        {bulkNotice && (
-          <p
-            role="status"
-            className={`mt-4 flex items-center gap-2 text-body-small ${bulkNotice.failed ? 'text-md-error' : 'text-md-primary'}`}
-          >
-            <MdSend aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
-            {bulkNotice.text}
-          </p>
-        )}
-        {error && (
-          <p role="alert" className="mt-4 flex items-center gap-2 text-body-small text-md-error">
-            <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
-            {error}
-          </p>
-        )}
+      {notice === 'reminder_sent' && (
+        <p role="status" className="mt-4 flex items-center gap-2 text-body-small text-md-primary">
+          <MdSend aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+          Reminder sent{noticeCase ? ` for ${noticeCase.case.name}` : ''}.
+        </p>
+      )}
+      {bulkNotice && (
+        <p
+          role="status"
+          className={`mt-4 flex items-center gap-2 text-body-small ${bulkNotice.failed ? 'text-md-error' : 'text-md-primary'}`}
+        >
+          <MdSend aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+          {bulkNotice.text}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mt-4 flex items-center gap-2 text-body-small text-md-error">
+          <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+          {error}
+        </p>
+      )}
 
-        <div className="mt-6">
-          {allCases.length === 0 ? (
-            <Card className="flex items-center gap-3">
-              <MdFolderOpen aria-hidden="true" className="h-6 w-6 shrink-0 text-md-on-surface-variant" />
-              <p className="text-body-medium text-md-on-surface-variant">
-                No cases yet. Publish a template, then create a case from it.
-              </p>
-            </Card>
-          ) : view === 'table' ? (
-            <CasesTable
-              rows={sortForDashboard(allCases).map((row) => toCaseTableRow(row, now))}
-              now={now}
-              initialState={parseCaseTableState(params)}
-              hiddenColumns={parseHiddenColumns(cookieStore.get(DASHBOARD_HIDDEN_COLUMNS_COOKIE)?.value)}
+      <div className="mt-6">
+        {allCases.length === 0 ? (
+          <Card className="flex items-center gap-3">
+            <MdFolderOpen
+              aria-hidden="true"
+              className="h-6 w-6 shrink-0 text-md-on-surface-variant"
             />
-          ) : (
-            <CasesList cases={allCases} filter={parseDashboardFilter(first(params.filter))} now={now} />
-          )}
-        </div>
-      </main>
-    </>
+            <p className="text-body-medium text-md-on-surface-variant">
+              No cases yet. Publish a template, then create a case from it.
+            </p>
+          </Card>
+        ) : view === 'table' ? (
+          <CasesTable
+            rows={sortForDashboard(allCases).map((row) => toCaseTableRow(row, now))}
+            now={now}
+            initialState={parseCaseTableState(params)}
+            hiddenColumns={parseHiddenColumns(
+              cookieStore.get(DASHBOARD_HIDDEN_COLUMNS_COOKIE)?.value,
+            )}
+          />
+        ) : (
+          <CasesList
+            cases={allCases}
+            filter={parseDashboardFilter(first(params.filter))}
+            now={now}
+          />
+        )}
+      </div>
+    </main>
   );
 }
