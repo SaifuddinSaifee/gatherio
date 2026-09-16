@@ -134,7 +134,7 @@ function RequestChangesDisclosure({
           name="reason"
           required
           maxLength={1000}
-          supportingText="Shown to the recipient on this item only. They aren't emailed until reminders ship — use Resend invite to nudge them."
+          supportingText="Shown to the recipient on this item. Send a reminder below to email it to them."
         />
         <div>
           <Button type="submit" variant="filled">

@@ -65,8 +65,8 @@ export default async function TemplateDetailPage({
 
   return (
     <>
-      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} />
-      <main className="mx-auto max-w-3xl px-6 py-12">
+      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} wide />
+      <main className="mx-auto max-w-7xl px-6 py-12">
         <Link
           href="/templates"
           className="flex items-center gap-1 text-body-small text-md-primary hover:underline"

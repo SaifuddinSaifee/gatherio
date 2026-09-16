@@ -84,7 +84,8 @@ test('template lifecycle: draft, add requirements, publish, instantiate a case, 
   const caseUrl = new URL(page.url()).origin + new URL(page.url()).pathname;
 
   // The two snapshotted requirements are visible with a real fulfilment status.
-  await expect(page.getByText('Insurance certificate')).toBeVisible();
+  // Scoped to the requirement's own title: the Stage 8.5 reminder panel on this page lists outstanding titles too.
+  await expect(page.getByRole('paragraph').filter({ hasText: /^Insurance certificate$/ })).toBeVisible();
   await expect(page.getByText('Any new subcontractors?')).toBeVisible();
   await expect(page.getByText('Pending').first()).toBeVisible();
 
@@ -114,7 +115,7 @@ test('template lifecycle: draft, add requirements, publish, instantiate a case, 
   // references it, and a case's requirement rows are its own copies, not
   // live references back to requirement_definition.
   await page.goto(caseUrl);
-  await expect(page.getByText('Insurance certificate')).toBeVisible();
+  await expect(page.getByRole('paragraph').filter({ hasText: /^Insurance certificate$/ })).toBeVisible();
   await expect(page.getByText('Any new subcontractors?')).toBeVisible();
 });
 

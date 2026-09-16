@@ -1,17 +1,19 @@
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { MdBusiness, MdCheckCircle, MdError, MdLink, MdMail, MdPerson, MdRateReview, MdSchedule } from 'react-icons/md';
+import { MdBusiness, MdCheckCircle, MdError, MdLink, MdMail, MdPerson, MdRateReview, MdSchedule, MdSend } from 'react-icons/md';
 import type { IconType } from 'react-icons';
 import { getCurrentSession } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import { getCaseDetail } from '@/lib/domain/case';
 import type { CaseStatusResult } from '@/lib/domain/case-status';
+import { getCaseReminderPanel } from '@/lib/domain/reminder';
 import { CASE_LINK_FLASH_COOKIE_NAME, readCaseLinkFlash } from '@/lib/case-link-flash';
 import { AppHeader } from '@/components/app-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { resendInviteAction, revokeAndReissueAction } from '../actions';
 import { ReviewItem } from './review-item';
+import { ReminderPanel } from './reminder-panel';
 
 const CASE_STATUS_DISPLAY: Record<CaseStatusResult['status'], { label: string; Icon: IconType }> = {
   complete: { label: 'Complete', Icon: MdCheckCircle },
@@ -19,23 +21,33 @@ const CASE_STATUS_DISPLAY: Record<CaseStatusResult['status'], { label: string; I
   awaiting_recipient: { label: 'Waiting on recipient', Icon: MdSchedule },
 };
 
+/** The most recent invite send failed — history is already newest-first. */
+function lastInviteFailed(history: { templateRef: string; status: string }[]): boolean {
+  const lastInvite = history.find((h) => h.templateRef === 'case_invite');
+  return lastInvite?.status === 'failed';
+}
+
 export default async function CaseDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ caseId: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
   const session = await getCurrentSession();
   if (!session) return null;
 
   const { caseId } = await params;
-  const { error } = await searchParams;
+  const { error, notice } = await searchParams;
 
   const detail = await getCaseDetail(session.workspaceId, caseId);
   if (!detail) notFound();
 
-  const [workspace] = await Promise.all([getWorkspaceById(session.workspaceId)]);
+  const now = new Date();
+  const [workspace, reminderPanel] = await Promise.all([
+    getWorkspaceById(session.workspaceId),
+    getCaseReminderPanel(session.workspaceId, caseId, now),
+  ]);
 
   const cookieStore = await cookies();
   const flashRaw = cookieStore.get(CASE_LINK_FLASH_COOKIE_NAME)?.value;
@@ -43,8 +55,8 @@ export default async function CaseDetailPage({
 
   return (
     <>
-      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} />
-      <main className="mx-auto max-w-3xl px-6 py-12">
+      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} wide />
+      <main className="mx-auto max-w-7xl px-6 py-12">
         <h1 className="text-headline-small font-medium text-md-on-surface">{detail.case.name}</h1>
         <p className="mt-1 text-body-medium text-md-on-surface-variant">
           {detail.templateName} (v{detail.templateVersionNumber})
@@ -82,6 +94,12 @@ export default async function CaseDetailPage({
           )}
         </p>
 
+        {notice === 'reminder_sent' && (
+          <p role="status" className="mt-4 flex items-center gap-2 text-body-small text-md-primary">
+            <MdSend aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+            Reminder sent.
+          </p>
+        )}
         {error && (
           <p role="alert" className="mt-4 flex items-center gap-2 text-body-small text-md-error">
             <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
@@ -108,6 +126,12 @@ export default async function CaseDetailPage({
                 Expires {new Date(flash.expiresAt).toLocaleDateString()}
               </p>
             </>
+          ) : lastInviteFailed(reminderPanel.history) ? (
+            <p className="flex items-center gap-2 text-body-small text-md-error">
+              <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+              The invite email to {detail.party?.email ?? 'the recipient'} couldn&apos;t be sent. Resend
+              invite to try again.
+            </p>
           ) : (
             <p className="text-body-small text-md-on-surface-variant">
               An invite was sent to {detail.party?.email ?? 'the recipient'}. Use Resend if they
@@ -130,6 +154,9 @@ export default async function CaseDetailPage({
             </form>
           </div>
         </Card>
+
+        <h2 className="mt-8 text-title-medium text-md-on-surface">Reminders</h2>
+        <ReminderPanel caseId={caseId} panel={reminderPanel} now={now} />
 
         <h2 className="mt-8 text-title-medium text-md-on-surface">Recipient</h2>
         <Card className="mt-3">

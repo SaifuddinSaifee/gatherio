@@ -8,6 +8,10 @@ just written. `[~]` means partially done; the note says what's missing.
 
 Legend: `[ ]` not started · `[~]` in progress / partial · `[x]` done & verified
 
+Last updated: 2026-09-16 (Stage 8.6 — dashboard views — **built and verified**: a reusable TanStack Table v9 data table under `src/components/ui/data-table/` (documented as design-revised.md §55A), the dashboard's table view as the new default with search, faceted filters, sorting, column toggle, URL-synced state and bulk reminders, the refined grouped list view, and per-browser view/column memory. Real bugs fixed: preference cookies scoped too narrowly to survive sign-in, a hidden header label widening the page on phones, row actions off-screen, colliding accessible names, and a pre-existing `/cases/new` wait race in the shared e2e helper. 248 Vitest tests; 16/16 Playwright specs sequentially (parallel run blocked by an overloaded machine — re-run); `tsc`, `eslint`, `next build` green)
+
+Last updated: 2026-09-16 (Stage 8.5 — dashboard and manual reminders — **specified, nothing built**. Inserted as its own stage and scheduled to land **before** Stage 8 despite the number: the goal is a product a validated concierge pilot can move onto (see [docs/gather-io-interview-playbook.md](docs/gather-io-interview-playbook.md) §5.5), and a pilot needs "what is blocking each case" plus a way to nudge the recipient, not the automated pg-boss cadence engine, which is invisible during a pilot. Stage 8.5 also lays the schema foundation Stage 8 builds on (`reminder_dispatch.trigger_type`, `delivery_attempt` writes, reminder copy refs). Stage 9's case-list item moves into 8.5; export stays in Stage 9)
+
 Last updated: 2026-09-12 (post-Stage-7 follow-up — fixed the "opaque download filename" gap logged below: `presignDownload` now threads `fileAsset.originalFilename` through to a real `Content-Disposition` on both storage drivers, via a shared, unit-tested `contentDispositionHeader()` helper in `storage.ts`. `stage7-review.spec.ts` now asserts the real filename instead of skipping it. Full regression sweep green: 179 Vitest tests, 13/13 Playwright specs, `tsc --noEmit`, `eslint .`, `next build`)
 
 Last updated: 2026-09-12 (Stage 7 — review and the rework loop — **complete**, all 11 steps of [plans/stage7.md](plans/stage7.md) built and verified: the `review`/`submission_version` schema changes (per-version decision numbering, DB-enforced reason requirement, a self-referencing supersedes FK), the `case-status.ts`/`submission-history.ts` derivation layer, `review.ts`'s approve/request-changes with optimistic concurrency, the closed-assignment write guards on every recipient submission path, the requester's review UI (`review-item`/`review-controls`/`submission-summary`, zero client JS) and its own download route, and Playwright coverage in a new `stage7-review.spec.ts`. Three real bugs found and fixed beyond what the plan anticipated: `saveDraftAnswer`'s lost-update race (it wrote back a fulfilment status it only read, letting a draft save silently reopen an already-decided item), `finalizeUpload` never checking the ticket's party and mishandling a replayed confirm (it would have deleted a completed submission out from under its own review), and a genuine pre-existing race in the (now-shared) e2e setup helper — clicking Publish and navigating away before the server action committed, which was intermittently flaking the pre-existing Stage 5/6 specs too, at every concurrency level. Full regression sweep green: 173 Vitest tests, 13/13 Playwright specs (Stages 4–7, both sequentially and at the project's default 5-way parallelism), `tsc --noEmit`, `eslint .`, `next build`. Two new known gaps logged: downloaded files get an opaque filename instead of their real one (a Stage 3 storage-layer gap surfaced only once Stage 7 exercised a real download), and `TextArea` now exists but four older hand-rolled textareas haven't been migrated to it)
@@ -225,6 +229,8 @@ Last updated: 2026-09-07 (Stage 6 — magic links and the recipient page — **c
 
 ## Stage 8 — Reminders
 
+**Builds on Stage 8.5**, which lands first: `reminder_dispatch.trigger_type`, `delivery_attempt` writes, and the `case_reminder_unopened` / `case_reminder_stalled` copy refs all come from 8.5. The automated job below writes `trigger_type = 'scheduled'`, the only rows the `(assignment_id, reminder_sequence)` partial unique index covers.
+
 - [ ] `pg-boss` job registered in `src/worker/jobs/reminder.ts`
 - [ ] Reads `reminder_policy` per case (cadence, channels, quiet_hours, stop_condition, unopened_cadence, stalled_cadence)
 - [ ] Reminder copy names only what is currently missing for that party
@@ -237,9 +243,76 @@ Last updated: 2026-09-07 (Stage 6 — magic links and the recipient page — **c
 - [ ] Stop condition: reminders cease once the case (or that assignment) is fully satisfied
 - [ ] Verify: running the reminder job twice over the same due assignment produces exactly one `reminder_dispatch` row (this is the single most important test in the whole plan per techstack.md)
 
+## Stage 8.5 — Dashboard and manual reminders
+
+**Not started.** Specified 2026-09-16. Builds **before** Stage 8: a requester dashboard showing what is blocking each case, plus a manual, email-only "Send reminder" button. No automated cadence, no pg-boss job. The send is fixed system copy plus an optional plain-text note from the requester; it is deliberately **not** product.md §5's Phase 1b "Send now" composer (no freeform body, no `MessageTemplate`, no `@`/`#` mentions, no SMS/WhatsApp).
+
+**Schema (one additive migration):**
+- [ ] `reminder_dispatch` gains `trigger_type` (`scheduled | manual | conditional`, default `scheduled`); `reminder_sequence` becomes nullable; the unique index becomes partial — `(assignment_id, reminder_sequence) WHERE trigger_type = 'scheduled'` — so a manual send is its own row and never consumes a slot in Stage 8's idempotency sequence (product.md §5)
+- [ ] `reminder_dispatch` gains a nullable `delivery_attempt_id` FK: one email covering N outstanding items = one `delivery_attempt` + N `reminder_dispatch` rows. The existing `delivery_attempt.reminder_dispatch_id` stays nullable and unused — drop one of the two links once Stage 8 settles the direction
+- [ ] Optional requester note persisted (on `delivery_attempt` or in audit metadata — decide during the build)
+
+**Domain:**
+- [ ] `sendManualReminder(workspaceId, userId, caseId, note?)` — refuses when the case is complete, when `listOutstandingForReminder` is empty, when the recipient has no email, or within a server-enforced cooldown (e.g. 15 min since the last manual send on that case; configurable for tests)
+- [ ] Mints a fresh link via `issueCaseAccess(..., 'resend')` (the raw token is never stored, so every reminder needs a new one; existing links stay live)
+- [ ] On success, one transaction: `delivery_attempt` (`status = 'sent'`, `provider_message_id`, `sent_at`), one `reminder_dispatch` per outstanding assignment (`trigger_type = 'manual'`, `reason_snapshot` = current changes-requested reason), audit `reminder.sent`
+- [ ] On send failure: no dispatch rows, audit `reminder.send_failed`, error banner — never throws past the action (same non-fatal posture as `sendCaseInvite`)
+- [ ] Copy in [messages.ts](src/lib/domain/messages.ts): `case_reminder_unopened` when the case has never been viewed (no `case.viewed`), `case_reminder_stalled` otherwise. Names only outstanding items, the changes-requested reason under its item, the fresh link, and the note as a clearly separated plain-text "Message from {requester}" block. Stage 8 reuses both refs
+- [ ] Invite sends also write a `delivery_attempt` (`reminder_dispatch_id` null) from now on, so "last contacted" includes the invite
+
+**Dashboard** (replaces Stage 9's case-list item):
+- [ ] Per case row: status; **blocking** — recipient name + outstanding-item count + first 1–2 item titles; needs-review count; **days open**; **last recipient activity** (latest party-actor audit event — viewed, submitted); **last reminded** (latest `delivery_attempt`, invite included)
+- [ ] Filter chips via `searchParams` — All / Awaiting recipient / Needs review / Complete; default sort needs-attention-first (needs review, then awaiting recipient by oldest last contact); zero client JS
+- [ ] Last-activity and last-contact loaded in one batch query for all listed cases — no new per-case query on top of `listCases`'s existing N+1
+- [ ] "Send reminder" shortcut on rows with outstanding items (sends without a note)
+
+**Case page:**
+- [ ] "Reminders" card beside "Recipient access": send form with optional note ([TextArea](src/components/ui/text-area.tsx)), a preview of which items the reminder will name, and sent history (time, sender, items named, status)
+- [ ] Button disabled with a stated reason when complete / nothing outstanding / in cooldown — the server enforces all three regardless
+- [ ] Server action in [cases/actions.ts](<src/app/(app)/cases/actions.ts>) following the `reissueAndRedirect` pattern (form action, hidden `caseId`, `?error=` redirect)
+
+**Verify:**
+- [ ] Vitest: a manual send writes one `delivery_attempt` + N `reminder_dispatch` rows (`trigger_type = 'manual'`, sequence null), reason snapshotted for a changes-requested item; a second send inside the cooldown is rejected and writes nothing; complete / nothing-outstanding cases are rejected; a simulated notify failure writes no dispatch rows and audits `reminder.send_failed`; repeated manual sends never trip the scheduled-only unique index
+- [ ] Playwright `e2e/stage8-5-reminders.spec.ts` (reusing `setupCaseForRecipientTests`, plus a small Mailpit HTTP API helper in [e2e/helpers.ts](e2e/helpers.ts)): dashboard shows the blocking recipient and item count → send with a note → Mailpit email lists only outstanding items, includes the note and a working link, uses unopened copy → open the link, send again past the cooldown → stalled copy → request changes, send → the reason appears in the email
+- [ ] `tsc --noEmit`, `eslint .`, `vitest run`, all Playwright specs, `next build`
+
+**Explicitly not in 8.5:** the pg-boss job, cadence and quiet hours, reading `reminder_policy`, SMS/WhatsApp, bounce webhooks and suppression, `MessageTemplate`, `@`/`#` mentions, the requester notification feed, ZIP export.
+
+## Stage 8.6 — Dashboard views (data table + list)
+
+**Built and verified 2026-09-16**, per [plans/stage8-6-dashboard-views.md](plans/stage8-6-dashboard-views.md). Two views of the same cases: a **data table (the default)** for scanning, filtering and bulk action, and the Stage 8.5 card **list**, refined. The chosen view is remembered per browser. Built on top of the Stage 8.5 dashboard/reminder code, which was in the working tree but not yet ticked off above — the boxes in the 8.5 section are left for that stage's own verification.
+
+**Reusable data table** ([src/components/ui/data-table/](src/components/ui/data-table/)):
+- [x] `useDataTable` — one shared TanStack Table **v9** feature set (sorting, pagination, row selection, column visibility; filtering deliberately left to callers) and a typed `createDataTableColumnHelper` with `meta.label`/`align`/cell classes. Written against v9's installed types and its bundled `skills/` docs — v9 is `useTable` + `tableFeatures`, not the v8 `useReactTable` + `getCoreRowModel` that shadcn's examples show
+- [x] `DataTable` (real `<table>`, sr-only caption, `aria-sort`, empty-state cell, own horizontal scroll), `DataTableColumnHeader`, `DataTablePagination`, `DataTableViewOptions` (Columns), `DataTableFacetedFilter`, `DataTableSearch`, `DataTableSelectionBar`, `createSelectColumn`
+- [x] New primitives: [`Checkbox`](src/components/ui/checkbox.tsx) (native input, M3 look, indeterminate), [`Popover`](src/components/ui/popover.tsx) (disclosure panel; Escape/outside click close, focus management), [`IconButton`](src/components/ui/icon-button.tsx), and `ButtonLink` in [button.tsx](src/components/ui/button.tsx) (generic over typed routes, ends the `<Link><Button>` nesting for new code). `filter-chip.tsx` exports `filterChipClassName` so chip-shaped buttons match
+- [x] Documented as design-revised.md **§55A Data Tables** (plus inventory and final-checklist entries)
+
+**Dashboard:**
+- [x] Pure [dashboard-table.ts](src/lib/domain/dashboard-table.ts): `toCaseTableRow`, attention flags (`overdue`, `due_soon` ≤7 days, `never_opened`, `email_failed`, `changes_requested`), `filterCaseRows` (search across case/template/recipient name/org/email; OR within a facet, AND across), `facetCounts` (each facet counted against the *other* filters), URL state parse/serialize with unknown values dropped
+- [x] [cases-table.tsx](<src/app/(app)/dashboard/cases-table.tsx>): search, Status / Template (when >1) / Needs-attention facets, Clear filters, Columns; columns Case, Recipient, Status (badge + progress), Outstanding, Due, Activity (recipient activity + last email), Open for and Created hidden by default; default order is the 8.5 priority sort; per-row Review / Remind; filters, sort and page mirrored into the URL
+- [x] Bulk "Send reminder to n" for selected cases that are currently eligible, with a line explaining any excluded ones — `sendManualReminders` in [reminder.ts](src/lib/domain/reminder.ts) runs the existing single send per case (claim → send → finalize kept intact), dedupes, caps at 100, reports `{sent, skipped, failed}`; `sendRemindersAction` + an outcome notice on the dashboard. Single-row reminders now return to the same filtered table (`returnQuery`, re-parsed server-side, never echoed raw)
+- [x] [cases-list.tsx](<src/app/(app)/dashboard/cases-list.tsx>): grouped *Needs your review* → *Waiting on recipient* → *Complete* (collapsed `<details>`), every outstanding item listed (up to 5 + "n more") with the changes-requested reason, **Review** / **Send reminder** matched to the group; status filter chips kept
+- [x] View switcher (M3 segmented button) beside **New case**; `gather_dashboard_view` + `gather_dashboard_hidden_columns` cookies read server-side, so the right view and columns render on first paint
+- [x] `AppHeader` `wide` prop; table view uses `max-w-7xl`
+
+**Real bugs found and fixed while verifying:**
+- **View preference lost after sign-in** (caught by the e2e spec): the cookies were first scoped to `path=/dashboard`. Sign-in posts to `/sign-in` and Next renders the `/dashboard` redirect inside that request, so the cookie was never sent and the default table came back. Both preference cookies are now `path=/`.
+- **Page body scrolled sideways at 390px** (found measuring overflow in a browser): the visually hidden "Actions" header label is `position: absolute`, and with no positioned ancestor inside the table's scroll container it was placed against `<body>` at the table's far right edge, widening the document to 1181px. The scroll container is now `relative`.
+- **Ten default columns pushed the row actions off-screen at 1440px** (browser pass): merged status + progress and activity + last email into single columns, hid Open for by default.
+- **Facet chips and sort buttons shared accessible names** ("Status" twice): facet triggers are now "Filter by status" etc.
+- **Pre-existing flake in `e2e/helpers.ts`**: `waitForURL(/\/cases\/[^/]+$/)` already matches `/cases/new`, so case setup "waited" for nothing and leaned on a later locator timeout — surfaced when a cold compile made create slow. Now `(?!new$)`; a shared `createAnotherCase` helper uses the same pattern.
+- **Stage 5 spec made ambiguous by 8.5's reminder panel** (it lists outstanding titles on the case page): the two case-page "Insurance certificate" assertions are scoped to the requirement's title paragraph, as the 8.5 plan anticipated.
+
+**Verified:**
+- [x] Vitest: [dashboard-table.test.ts](src/lib/domain/__tests__/dashboard-table.test.ts) (14), [dashboard-prefs.test.ts](src/lib/__tests__/dashboard-prefs.test.ts) (5), two new `sendManualReminders` integration tests in [reminder.test.ts](src/lib/domain/__tests__/reminder.test.ts) (sent/skipped/failed across three cases in one workspace, duplicate id, over-cap refusal before any send). Full suite: **248 tests, 22 files**
+- [x] Playwright [e2e/stage8-6-dashboard-views.spec.ts](e2e/stage8-6-dashboard-views.spec.ts) (3): table is the default; search/status filter/sort/hidden column, each surviving reload; list view survives reload **and sign-out/sign-in**; select-all → bulk send → notice, rows show "Reminded", selection cleared, re-selection explains the cooldown. Full suite **16/16 with `--workers=1`**. At the default 5-way parallelism the run timed out across every spec, including untouched ones — the machine was at load average ~32 from an unrelated process, with plain `GET /cases/new` taking 15s — so parallel runs should be repeated on a quiet machine
+- [x] `tsc --noEmit`, `eslint .`, `next build` (`/dashboard` first-load JS 141 kB)
+- [x] Browser pass at 1440px and 390px via Playwright screenshots: table, status facet popover, selection bar, columns menu, grouped list; no console errors or hydration warnings
+
 ## Stage 9 — Dashboard and export
 
-- [ ] Case list: sortable/filterable, shows blocking party + blocking items + days open + last recipient activity per case
+- [~] ~~Case list: sortable/filterable, shows blocking party + blocking items + days open + last recipient activity per case~~ — **moved to Stage 8.5**
 - [ ] Delivery problems surfaced on the case (a bounced invite must not be invisible)
 - [ ] ZIP export job in the worker (`archiver`), includes files + a rendered summary of answers
 - [ ] Export delivered via short-lived signed URL (reuses storage adapter's `presignDownload`)
@@ -274,7 +347,7 @@ Last updated: 2026-09-07 (Stage 6 — magic links and the recipient page — **c
 - [x] `Card` ([card.tsx](src/components/ui/card.tsx)) — filled/outlined variants, `rounded-md` (12px) default, non-interactive by construction (no hover shadow/scale baked in — §36).
 - [x] `TextField` ([text-field.tsx](src/components/ui/text-field.tsx)) — top-corner radius corrected to `rounded-t-xs` (4px, the canonical M3 filled-field shape; the old doc's 12px was an arbitrary guess). Added `errorMessage`/`supportingText` props, `aria-invalid` + `aria-describedby` programmatic association, and a text-prefixed error message so color isn't the sole indicator.
 - [x] `cn()` helper added ([lib/cn.ts](src/lib/cn.ts), `clsx` + `tailwind-merge` v3) — **caught a real bug** while wiring `Card` into the sign-up page: a component's own default (`p-6`) and a caller's override (`p-8`) were both landing in the class string with no defined winner, since plain string concatenation can't resolve conflicting Tailwind utilities. All three primitives now merge classes through `cn()` instead of raw template strings.
-- [ ] `Chip`, `StatusPill`, `FAB` — still unbuilt, add when a real consumer needs them.
+- [ ] `Chip`, `StatusPill`, `FAB` — still unbuilt, add when a real consumer needs them. (Stage 8.5 added a link-style filter chip; Stage 8.6 added `Checkbox`, `Popover`, `IconButton`, `ButtonLink`, and the reusable data table — design-revised.md §55A.)
 - [x] Icons — `react-icons/md` (Google Material Symbols/Icons, matching §79's "coherent Material-oriented icon family") added 2026-08-30 across every page built so far: `AppHeader` nav + sign-out, all primary/destructive buttons (add/create/publish/archive/edit/delete/save/send/sign-in/sign-up), action-type icons on requirement rows (upload/answer/acknowledge), version-status icons (draft/published/archived), fulfilment-status icons on the case detail page (pending/viewed/in-progress/submitted/waived/cancelled), and every error banner (`MdError`). Sized `h-4.5 w-4.5` (18px, inline with button/label text) or `h-5 w-5`/`h-6 w-6` (20-24px, standalone section/empty-state icons), per §61/§79's "visible icon size ≠ interaction target size" and the 18/20/24px guidance. Every icon paired with visible text is `aria-hidden="true"` — the text remains the accessible name and the sole thing screen readers announce, so icons are reinforcement, never the only indicator (§72, §75).
 
 **Known partial gaps in the rebuilt primitives** (real, not hidden — see also "Known gaps" below):
@@ -344,6 +417,7 @@ Last updated: 2026-09-07 (Stage 6 — magic links and the recipient page — **c
 - [x] Integration test: state change + audit event commit/rollback together — built in Stage 6, `finalizeUpload`'s test forces a Postgres `inet` cast failure on the second of three audit writes in one transaction and confirms every earlier write in that same transaction rolled back too
 - [x] Integration test: file undownloadable while `malware_scan_status` = `quarantined` — **built in Stage 6**: `presignFileDownload` throws for `pending`/`quarantined`/`infected`/`scan_failed` and succeeds only for `clean` ([src/lib/domain/__tests__/file.test.ts](src/lib/domain/__tests__/file.test.ts))
 - [ ] Manual: Mailpit shows different copy for unopened vs. stalled reminders
+- [ ] Manual: Mailpit shows unopened vs. stalled copy for manual reminders, with the requester's note (Stage 8.5)
 - [ ] Manual: recipient page checked at 360px width with network throttled
 
 ---
@@ -368,4 +442,6 @@ Last updated: 2026-09-07 (Stage 6 — magic links and the recipient page — **c
 - ~~**Downloaded files get an opaque filename, not their real one.**~~ **Resolved 2026-09-12** — `presignDownload` now accepts a `filename`, threaded from `fileAsset.originalFilename` through both storage drivers (the local driver's signed token → `/api/download/[token]`'s `Content-Disposition`; R2's `ResponseContentDisposition` on the presigned URL) via a shared `contentDispositionHeader()` helper in `storage.ts` (unit-tested for plain, non-ASCII, and header-injection-attempt names). `stage7-review.spec.ts` asserts `download.suggestedFilename()` for real instead of skipping it.
 - **Five hand-rolled textareas now exist, one of them (`TextArea`) a real primitive.** Stage 7 added `src/components/ui/text-area.tsx` for the review-changes reason field; the four earlier ones (`AnswerField`'s long_text control, and the template builders' instructions/acceptance-criteria/choice-options fields) still hand-roll the identical class string. Migrating them is cleanup, not correctness — same category as the `Select` conditional-field gap above.
 - **`review_status`'s `rejected` value is unreachable and untested against real UI.** Nothing in Stage 7 ever produces it — `deriveItemState` handles it defensively (it blocks case completion, same as `changes_requested`) but no reviewer-facing control can select it. If Phase 1b ever exposes a hard-rejection action, it needs its own recipient-facing copy and a decision on whether it's terminal (currently just "blocks forever" by construction, with no path back for the recipient).
+- **`AppHeader` overflows at phone width on every requester page** (pre-existing, measured during Stage 8.6): at 390px the workspace name and Sign out push the document to 444px wide. The recipient page doesn't use this header, so recipients are unaffected. Needs a compact header layout (wrap, or move the workspace name into a menu).
+- **Only new code uses `ButtonLink`.** Older pages (templates, case detail, the old dashboard pattern) still wrap `<Button>` in `<Link>`, which nests a `<button>` inside an `<a>` — invalid HTML with an ambiguous keyboard/screen-reader target. Migrate as those pages are touched.
 - **A concurrent recipient submit can race a requester's "approve as-is" and lose the in-flight upload.** By design (Stage 7 decision 5): if a requester approves an item exactly while the recipient's browser is mid-upload for a *replacement* of that same item, `finalizeUpload`'s locked re-check sees the assignment has closed and discards the upload, returning a "This item has already been received" error to the recipient rather than silently overwriting the accepted decision. Correct behavior, but the recipient loses whatever they were uploading and has to notice the error and start over — acceptable at today's volumes, worth a nicer recovery (e.g. auto-resuming into a fresh version) if it turns out to happen often in practice.

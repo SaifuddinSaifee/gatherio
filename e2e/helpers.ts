@@ -18,6 +18,8 @@ export interface RequirementSpec {
 export interface CaseSetupResult {
   link: string;
   caseUrl: string;
+  email: string;
+  password: string;
 }
 
 const DEFAULT_REQUIREMENTS: RequirementSpec[] = [
@@ -86,7 +88,9 @@ export async function setupCaseForRecipientTests(
   await page.fill('#displayName', `${emailPrefix} Recipient`);
   await page.fill('#email', 'recipient@example.com');
   await page.click('button:has-text("Create case")');
-  await page.waitForURL(/\/cases\/[^/]+$/);
+  // `(?!new$)`: the form's own URL, /cases/new, also matches /cases/[^/]+$ — without excluding it this
+  // returned immediately and relied on the `code` locator's timeout to cover a slow create.
+  await page.waitForURL(/\/cases\/(?!new$)[^/]+$/);
 
   // The recipient's magic link is revealed via a signed flash cookie
   // (Stage 6), not a `?newToken=` query param — it never touches the URL
@@ -95,5 +99,24 @@ export async function setupCaseForRecipientTests(
   if (!linkText) throw new Error('Recipient link not found on the case page.');
   const caseUrl = new URL(page.url()).origin + new URL(page.url()).pathname;
 
-  return { link: linkText.trim(), caseUrl };
+  return { link: linkText.trim(), caseUrl, email, password };
+}
+
+/**
+ * A second case from an already-published template, for specs that need
+ * several cases in one workspace. Waits for the case page itself — a bare
+ * `/cases/[^/]+$` would already match `/cases/new` and return before the
+ * create action has finished.
+ */
+export async function createAnotherCase(
+  page: Page,
+  options: { templateName: string; caseName: string; recipientName: string },
+): Promise<void> {
+  await page.goto('/cases/new');
+  await page.selectOption('#templateId', { label: options.templateName });
+  await page.fill('#name', options.caseName);
+  await page.fill('#displayName', options.recipientName);
+  await page.fill('#email', 'recipient@example.com');
+  await page.click('button:has-text("Create case")');
+  await page.waitForURL(/\/cases\/(?!new$)[^/]+$/);
 }

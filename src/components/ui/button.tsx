@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from 'react';
+import Link from 'next/link';
 import { cn } from '@/lib/cn';
 
 type ButtonVariant = 'filled' | 'tonal' | 'outlined' | 'text';
@@ -44,6 +45,29 @@ const VARIANT_STYLES: Record<
   },
 };
 
+function buttonClassName(variant: ButtonVariant, fullWidth: boolean | undefined, className: string | undefined) {
+  const styles = VARIANT_STYLES[variant];
+  return cn(
+    'group relative inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-full px-6 text-label-large font-medium transition-shadow duration-(--duration-effects-default) ease-md-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-md-on-surface/12 disabled:text-md-on-surface/38 disabled:shadow-elevation-0',
+    fullWidth && 'w-full',
+    styles.container,
+    styles.elevation,
+    className,
+  );
+}
+
+function ButtonContent({ variant, children }: { variant: ButtonVariant; children: ReactNode }) {
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-(--duration-effects-fast) group-hover:opacity-(--opacity-state-hover) group-active:opacity-(--opacity-state-pressed) ${VARIANT_STYLES[variant].stateLayer}`}
+      />
+      <span className="relative z-10 inline-flex items-center gap-2">{children}</span>
+    </>
+  );
+}
+
 export function Button({
   variant = 'filled',
   fullWidth,
@@ -51,24 +75,25 @@ export function Button({
   children,
   ...props
 }: ButtonProps) {
-  const styles = VARIANT_STYLES[variant];
-
   return (
-    <button
-      className={cn(
-        'group relative inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-full px-6 text-label-large font-medium transition-shadow duration-(--duration-effects-default) ease-md-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-md-on-surface/12 disabled:text-md-on-surface/38 disabled:shadow-elevation-0',
-        fullWidth && 'w-full',
-        styles.container,
-        styles.elevation,
-        className,
-      )}
-      {...props}
-    >
-      <span
-        aria-hidden="true"
-        className={`pointer-events-none absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-(--duration-effects-fast) group-hover:opacity-(--opacity-state-hover) group-active:opacity-(--opacity-state-pressed) ${styles.stateLayer}`}
-      />
-      <span className="relative z-10 inline-flex items-center gap-2">{children}</span>
+    <button className={buttonClassName(variant, fullWidth, className)} {...props}>
+      <ButtonContent variant={variant}>{children}</ButtonContent>
     </button>
+  );
+}
+
+type ButtonLinkProps<RouteType> = Omit<ComponentProps<typeof Link<RouteType>>, 'className' | 'children'> & {
+  variant?: ButtonVariant;
+  fullWidth?: boolean;
+  className?: string;
+  children: ReactNode;
+};
+
+/** A navigation that looks like a button — a real link, never a `<button>` nested inside an `<a>`. */
+export function ButtonLink<RouteType>({ variant = 'filled', fullWidth, className, children, ...props }: ButtonLinkProps<RouteType>) {
+  return (
+    <Link className={buttonClassName(variant, fullWidth, className)} {...props}>
+      <ButtonContent variant={variant}>{children}</ButtonContent>
+    </Link>
   );
 }

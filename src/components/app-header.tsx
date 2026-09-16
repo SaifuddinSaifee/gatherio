@@ -14,13 +14,16 @@ import { signOutAction } from '@/app/(app)/actions';
 export function AppHeader({
   workspaceName,
   role,
+  wide = false,
 }: {
   workspaceName: string;
   role?: 'owner' | 'member';
+  /** Match a page whose content runs wider than the default reading width, e.g. a data table. */
+  wide?: boolean;
 }) {
   return (
     <header className="border-b border-md-outline-variant bg-md-surface">
-      <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
+      <div className={`mx-auto flex ${wide ? 'max-w-7xl' : 'max-w-4xl'} items-center justify-between px-6 py-4`}>
         <div className="flex items-center gap-6">
           <Link href="/dashboard">
             <Logo className="text-title-large" />

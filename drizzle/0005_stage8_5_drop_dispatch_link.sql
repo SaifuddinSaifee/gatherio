@@ -1,0 +1,1 @@
+ALTER TABLE "delivery_attempt" DROP COLUMN "reminder_dispatch_id";

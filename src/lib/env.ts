@@ -25,6 +25,9 @@ const envSchema = z.object({
   UPLOAD_MAX_BYTES: z.coerce.number().default(26_214_400), // 25 MB
   UPLOAD_PRESIGN_TTL_SECONDS: z.coerce.number().default(900),
   RECIPIENT_SESSION_TTL_SECONDS: z.coerce.number().default(3600),
+
+  // --- Manual reminders (Stage 8.5) ----------------------------------
+  REMINDER_COOLDOWN_SECONDS: z.coerce.number().default(900),
 });
 
 /**

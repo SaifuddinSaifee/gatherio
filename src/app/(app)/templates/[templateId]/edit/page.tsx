@@ -25,8 +25,8 @@ export default async function EditTemplatePage({
   if (!requireRole(session, 'owner')) {
     return (
       <>
-        <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} />
-        <main className="mx-auto max-w-3xl px-6 py-12">
+        <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} wide />
+        <main className="mx-auto max-w-7xl px-6 py-12">
           <p
             role="alert"
             className="flex items-center gap-2 rounded-sm bg-md-error-container px-4 py-3 text-body-medium text-md-on-error-container"
@@ -46,8 +46,8 @@ export default async function EditTemplatePage({
   if (version.status !== 'draft') {
     return (
       <>
-        <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} />
-        <main className="mx-auto max-w-3xl px-6 py-12">
+        <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} wide />
+        <main className="mx-auto max-w-7xl px-6 py-12">
           <p className="text-body-medium text-md-on-surface-variant">
             This version is published and immutable. Create a new draft version from the template
             page to make edits.
@@ -64,8 +64,8 @@ export default async function EditTemplatePage({
 
   return (
     <>
-      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} />
-      <main className="mx-auto max-w-3xl px-6 py-12">
+      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} wide />
+      <main className="mx-auto max-w-7xl px-6 py-12">
         <h1 className="text-headline-small font-medium text-md-on-surface">Edit template</h1>
         <p className="mt-1 text-body-medium text-md-on-surface-variant">
           Update the template name and its requirements.

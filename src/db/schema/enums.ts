@@ -35,7 +35,17 @@ export const deliveryStatus = pgEnum('delivery_status', [
   'delivered',
   'bounced',
   'suppressed',
+  // Stage 8.5: the provider refused the send outright (SMTP error) — not
+  // a bounce, which is an asynchronous report about an accepted message.
+  'failed',
 ]);
+
+/**
+ * Why a reminder_dispatch row exists (Stage 8.5, product.md §5). Only
+ * `scheduled` rows occupy a slot in the (assignment_id, reminder_sequence)
+ * idempotency sequence; a requester's manual send is its own row.
+ */
+export const reminderTrigger = pgEnum('reminder_trigger', ['scheduled', 'manual', 'conditional']);
 
 export const signatureStatus = pgEnum('signature_status', [
   'not_sent',

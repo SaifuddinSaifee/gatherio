@@ -31,8 +31,8 @@ export default async function TemplatesPage() {
 
   return (
     <>
-      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} />
-      <main className="mx-auto max-w-4xl px-6 py-12">
+      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} wide />
+      <main className="mx-auto max-w-7xl px-6 py-12">
         <div className="flex items-center justify-between">
           <h1 className="text-headline-small font-medium text-md-on-surface">Templates</h1>
           <Link href="/templates/new">

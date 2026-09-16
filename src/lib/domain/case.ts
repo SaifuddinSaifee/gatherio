@@ -1,18 +1,27 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { scoped, type WorkspaceId } from '@/db/scoped';
 import * as schema from '@/db/schema';
 import { withAudit } from '@/db/audit';
 import { generateAccessToken } from '@/lib/token';
+import { env } from '@/lib/env';
 import { getLatestVersion, listRequirementDefinitions } from './template';
 import {
+  caseStatusFromInputs,
   deriveCaseStatus,
   deriveItemState,
   loadCaseStatusInputs,
+  outstandingFromInputs,
+  reminderEligibility,
+  selectReminderItems,
+  type CaseStatusResult,
   type CompletedKind,
   type ItemState,
+  type OutstandingForReminder,
   type ReviewDecision,
 } from './case-status';
 import { loadAssignmentHistory, type HistoryEntry } from './submission-history';
+
+const REMINDER_TEMPLATE_REFS = ['case_reminder_unopened', 'case_reminder_stalled'] as const;
 
 const ACCESS_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -144,19 +153,55 @@ export async function instantiateCase(
  * then grouped in memory — the template-name/party lookups below stay
  * N+1 per case, the existing accepted precedent in this function.
  */
-export async function listCases(workspaceId: WorkspaceId) {
+export interface DashboardActivity {
+  eventType: string;
+  occurredAt: Date;
+}
+
+export interface DashboardContact {
+  createdAt: Date;
+  status: (typeof schema.deliveryAttempt.$inferSelect)['status'];
+  templateRef: string;
+}
+
+export interface DashboardCase {
+  case: typeof schema.caseTable.$inferSelect;
+  templateName: string;
+  party: typeof schema.party.$inferSelect | null;
+  totalRequirements: number;
+  status: CaseStatusResult['status'];
+  counts: CaseStatusResult['counts'];
+  /** Only the items a reminder would name (Stage 8.5) — required or changes-requested; an untouched optional item is left out. */
+  blockingItems: OutstandingForReminder[];
+  lastRecipientActivity: DashboardActivity | null;
+  /** The most recent email of any kind (invite or reminder) sent to this case's recipient. */
+  lastContact: DashboardContact | null;
+  /** The most recent queued/sent *reminder* specifically — what the cooldown in `reminder` is measured against, which can differ from `lastContact` (e.g. a more recent invite resend). */
+  lastReminderAt: Date | null;
+  reminder: ReturnType<typeof reminderEligibility>;
+}
+
+/**
+ * Stage 7: "submitted" stopped being the interesting fact once review
+ * exists — the status inputs are loaded for every case in this workspace
+ * in one batched `loadCaseStatusInputs` call. Stage 8.5 adds two more
+ * batched (not per-case) queries for the dashboard's "what's blocking"
+ * and "last contacted" columns — the template-name/party lookups stay
+ * N+1 per case, the existing precedent this function already set.
+ */
+export async function listCases(
+  workspaceId: WorkspaceId,
+  now: Date = new Date(),
+): Promise<DashboardCase[]> {
   const s = scoped(workspaceId);
   const cases = await s.db
     .select()
     .from(schema.caseTable)
     .where(s.where(schema.caseTable.workspaceId))
     .orderBy(desc(schema.caseTable.createdAt));
+  const caseIds = cases.map((c) => c.id);
 
-  const statusInputs = await loadCaseStatusInputs(
-    s.db,
-    workspaceId,
-    cases.map((c) => c.id),
-  );
+  const statusInputs = await loadCaseStatusInputs(s.db, workspaceId, caseIds);
   const inputsByCase = new Map<string, typeof statusInputs>();
   for (const item of statusInputs) {
     const list = inputsByCase.get(item.caseId);
@@ -164,7 +209,81 @@ export async function listCases(workspaceId: WorkspaceId) {
     else inputsByCase.set(item.caseId, [item]);
   }
 
-  const results = [];
+  const activityByCase = new Map<string, DashboardActivity>();
+  const contactByCase = new Map<string, DashboardContact>();
+  const lastReminderByCase = new Map<string, Date>();
+
+  if (caseIds.length > 0) {
+    const activityRows = await s.db
+      .selectDistinctOn([schema.auditEvent.caseId], {
+        caseId: schema.auditEvent.caseId,
+        eventType: schema.auditEvent.eventType,
+        occurredAt: schema.auditEvent.occurredAt,
+      })
+      .from(schema.auditEvent)
+      .where(
+        s.where(
+          schema.auditEvent.workspaceId,
+          and(
+            inArray(schema.auditEvent.caseId, caseIds),
+            eq(schema.auditEvent.actorType, 'party'),
+            inArray(schema.auditEvent.eventType, [
+              'case.viewed',
+              'assignment.started',
+              'assignment.submitted',
+            ]),
+          ),
+        ),
+      )
+      .orderBy(asc(schema.auditEvent.caseId), desc(schema.auditEvent.occurredAt));
+    for (const row of activityRows) {
+      if (!row.caseId) continue;
+      activityByCase.set(row.caseId, { eventType: row.eventType, occurredAt: row.occurredAt });
+    }
+
+    const contactRows = await s.db
+      .selectDistinctOn([schema.party.caseId], {
+        caseId: schema.party.caseId,
+        createdAt: schema.deliveryAttempt.createdAt,
+        status: schema.deliveryAttempt.status,
+        templateRef: schema.deliveryAttempt.templateRef,
+      })
+      .from(schema.deliveryAttempt)
+      .innerJoin(schema.party, eq(schema.party.id, schema.deliveryAttempt.partyId))
+      .where(s.where(schema.deliveryAttempt.workspaceId, inArray(schema.party.caseId, caseIds)))
+      .orderBy(asc(schema.party.caseId), desc(schema.deliveryAttempt.createdAt));
+    for (const row of contactRows) {
+      contactByCase.set(row.caseId, {
+        createdAt: row.createdAt,
+        status: row.status,
+        templateRef: row.templateRef,
+      });
+    }
+
+    const reminderRows = await s.db
+      .selectDistinctOn([schema.party.caseId], {
+        caseId: schema.party.caseId,
+        createdAt: schema.deliveryAttempt.createdAt,
+      })
+      .from(schema.deliveryAttempt)
+      .innerJoin(schema.party, eq(schema.party.id, schema.deliveryAttempt.partyId))
+      .where(
+        s.where(
+          schema.deliveryAttempt.workspaceId,
+          and(
+            inArray(schema.party.caseId, caseIds),
+            inArray(schema.deliveryAttempt.templateRef, REMINDER_TEMPLATE_REFS),
+            inArray(schema.deliveryAttempt.status, ['queued', 'sent']),
+          ),
+        ),
+      )
+      .orderBy(asc(schema.party.caseId), desc(schema.deliveryAttempt.createdAt));
+    for (const row of reminderRows) {
+      lastReminderByCase.set(row.caseId, row.createdAt);
+    }
+  }
+
+  const results: DashboardCase[] = [];
   for (const caseRow of cases) {
     const [templateInfo] = await s.db
       .select({ templateName: schema.workflowTemplate.name })
@@ -184,16 +303,8 @@ export async function listCases(workspaceId: WorkspaceId) {
       .limit(1);
 
     const items = inputsByCase.get(caseRow.id) ?? [];
-    const { status, counts } = deriveCaseStatus(
-      items.map((i) => ({
-        required: i.required,
-        state: deriveItemState({
-          fulfilmentStatus: i.fulfilmentStatus,
-          latestKind: i.latestKind,
-          latestReviewStatus: i.latestReviewStatus,
-        }),
-      })),
-    );
+    const { status, counts } = caseStatusFromInputs(items);
+    const blockingItems = selectReminderItems(outstandingFromInputs(items));
 
     results.push({
       case: caseRow,
@@ -202,6 +313,18 @@ export async function listCases(workspaceId: WorkspaceId) {
       totalRequirements: items.length,
       status,
       counts,
+      blockingItems,
+      lastRecipientActivity: activityByCase.get(caseRow.id) ?? null,
+      lastContact: contactByCase.get(caseRow.id) ?? null,
+      lastReminderAt: lastReminderByCase.get(caseRow.id) ?? null,
+      reminder: reminderEligibility({
+        caseStatus: status,
+        reminderItemCount: blockingItems.length,
+        recipientEmail: party?.email ?? null,
+        lastReminderAt: lastReminderByCase.get(caseRow.id) ?? null,
+        now,
+        cooldownMs: env.REMINDER_COOLDOWN_SECONDS * 1000,
+      }),
     });
   }
   return results;
@@ -388,35 +511,4 @@ export async function issueCaseAccess(
   });
 
   return { token, expiresAt, party: result.party, caseRow: result.caseRow };
-}
-
-/**
- * A standalone audit write — there is no larger business transaction to
- * ride along with here, since it records the outcome of a network call
- * (sendCaseInvite) that must happen outside any transaction.
- */
-export async function recordInviteSent(
-  workspaceId: WorkspaceId,
-  caseId: string,
-  userId: string,
-  outcome: { recipient: string; providerMessageId?: string },
-): Promise<void> {
-  const s = scoped(workspaceId);
-  await s.db.transaction(async (tx) => {
-    await withAudit(tx, {
-      workspaceId,
-      caseId,
-      actorType: 'user',
-      actorId: userId,
-      eventType: 'case.invite_sent',
-      objectType: 'case',
-      objectId: caseId,
-      metadata: {
-        channel: 'email',
-        recipient: outcome.recipient,
-        providerMessageId: outcome.providerMessageId ?? null,
-        templateRef: 'case_invite',
-      },
-    });
-  });
 }

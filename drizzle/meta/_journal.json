@@ -29,6 +29,20 @@
       "when": 1789197366684,
       "tag": "0003_pale_hellcat",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789568788330,
+      "tag": "0004_stage8_5_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789568801235,
+      "tag": "0005_stage8_5_drop_dispatch_link",
+      "breakpoints": true
     }
   ]
 }
