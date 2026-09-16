@@ -216,6 +216,9 @@ export interface CaseTableState extends CaseTableFilters {
   pageSize: PageSize;
 }
 
+/** The table-only part of the state: what the list view doesn't share. */
+export type CaseTableView = Pick<CaseTableState, 'sort' | 'page' | 'pageSize'>;
+
 export const DEFAULT_TABLE_STATE: CaseTableState = { ...EMPTY_FILTERS, sort: null, page: 0, pageSize: DEFAULT_PAGE_SIZE };
 
 type SearchParamsInput = Record<string, string | string[] | undefined> | URLSearchParams;

@@ -104,6 +104,40 @@ test.describe('Stage 8.6 — dashboard views', () => {
     await expect(caseRow(page, alpha)).toBeVisible();
   });
 
+  test('the list view has the same search and filters, shared with the table', async ({ page }) => {
+    const { alpha, beta } = await setupTwoCases(page, 'listfilters');
+    const search = page.getByRole('searchbox', { name: 'Search cases, recipients, or templates' });
+    const card = (name: string) => page.getByRole('listitem').filter({ hasText: name });
+
+    await page.goto('/dashboard');
+    await page.getByRole('radio', { name: 'List' }).click();
+    await expect(card(alpha)).toBeVisible();
+
+    // Search narrows the list and lands in the URL.
+    await search.fill('Beta Owner');
+    await expect(card(alpha)).toHaveCount(0);
+    await expect(card(beta)).toBeVisible();
+    await expect(page).toHaveURL(/[?&]q=Beta\+Owner/);
+
+    // Switching views keeps the search in both directions.
+    await page.getByRole('radio', { name: 'Table' }).click();
+    await expect(search).toHaveValue('Beta Owner');
+    await expect(caseRow(page, alpha)).toHaveCount(0);
+    await expect(caseRow(page, beta)).toBeVisible();
+    await page.getByRole('radio', { name: 'List' }).click();
+    await expect(card(beta)).toBeVisible();
+
+    // A status with no matches empties the list, with a way back.
+    await page.getByRole('button', { name: 'Filter by status' }).click();
+    await page.getByRole('checkbox', { name: /Complete/ }).check();
+    await page.keyboard.press('Escape');
+    await expect(page.getByText('No cases match these filters.')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear filters' }).first().click();
+    await expect(search).toHaveValue('');
+    await expect(card(alpha)).toBeVisible();
+    await expect(card(beta)).toBeVisible();
+  });
+
   test('selecting cases and sending reminders in bulk', async ({ page }) => {
     const { alpha, beta } = await setupTwoCases(page, 'bulk');
 

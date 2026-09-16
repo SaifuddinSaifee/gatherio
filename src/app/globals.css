@@ -217,6 +217,11 @@
   }
 }
 
+/* Always reserve the scrollbar's width, so centered content doesn't shift sideways between short and long pages. */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   background-color: var(--color-md-surface);
   color: var(--color-md-on-surface);

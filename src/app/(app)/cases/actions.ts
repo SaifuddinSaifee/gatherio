@@ -16,7 +16,6 @@ import {
   sendManualReminders,
   TooManyRemindersError,
 } from '@/lib/domain/reminder';
-import { parseDashboardFilter } from '@/lib/domain/dashboard';
 import { caseTableStateToSearchParams, parseCaseTableState } from '@/lib/domain/dashboard-table';
 import { env } from '@/lib/env';
 import { clientIp, userAgent } from '@/lib/request-context';
@@ -174,8 +173,8 @@ export async function revokeAndReissueAction(formData: FormData): Promise<void> 
 /**
  * Stage 8.5: the requester's manual, email-only reminder. Works from
  * either the case page or the dashboard row shortcut — `returnTo` decides
- * where the redirect lands, and `filter` round-trips the dashboard's
- * current chip so a send doesn't reset it.
+ * where the redirect lands, and `returnQuery` round-trips the dashboard's
+ * search and filters so a send doesn't reset them.
  *
  * // Stage 11: can() — any workspace member may send a reminder today,
  * same posture as the review actions above.
@@ -224,16 +223,13 @@ export async function sendReminderAction(formData: FormData): Promise<void> {
 }
 
 /**
- * The dashboard state a reminder form came from — the list view's status
- * filter or the table view's search/facets/sort/page — rebuilt from
- * validated values only, never echoed back raw into the redirect.
+ * The dashboard state a reminder form came from — search, filters, sort,
+ * and page — rebuilt from validated values only, never echoed back raw
+ * into the redirect.
  */
 function dashboardReturnParams(formData: FormData): URLSearchParams {
   const returnQuery = new URLSearchParams(String(formData.get('returnQuery') ?? ''));
-  const params = caseTableStateToSearchParams(parseCaseTableState(returnQuery));
-  const filter = parseDashboardFilter(String(formData.get('filter') ?? ''));
-  if (filter !== 'all') params.set('filter', filter);
-  return params;
+  return caseTableStateToSearchParams(parseCaseTableState(returnQuery));
 }
 
 /** Stage 8.6 bulk "Send reminder" from the dashboard table. Stage 11: can(). */

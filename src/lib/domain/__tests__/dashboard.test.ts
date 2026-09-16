@@ -6,12 +6,7 @@ import * as schema from '@/db/schema';
 import { seedFixtureCase, seedFixtureWorkspace } from '@/db/testing';
 import { markCaseViewed, recordAnswerSubmission } from '../submission';
 import { recordInviteDelivery } from '../reminder';
-import {
-  filterCounts,
-  matchesDashboardFilter,
-  parseDashboardFilter,
-  sortForDashboard,
-} from '../dashboard';
+import { sortForDashboard } from '../dashboard';
 import { listCases, type DashboardCase } from '../case';
 
 let seq = 0;
@@ -43,51 +38,6 @@ function dashboardCase(overrides: Partial<DashboardCase> = {}): DashboardCase {
     ...overrides,
   };
 }
-
-describe('parseDashboardFilter', () => {
-  it('accepts every known filter', () => {
-    expect(parseDashboardFilter('needs_review')).toBe('needs_review');
-    expect(parseDashboardFilter('awaiting_recipient')).toBe('awaiting_recipient');
-    expect(parseDashboardFilter('complete')).toBe('complete');
-    expect(parseDashboardFilter('all')).toBe('all');
-  });
-
-  it('falls back to "all" for anything unknown', () => {
-    expect(parseDashboardFilter('bogus')).toBe('all');
-    expect(parseDashboardFilter(undefined)).toBe('all');
-    expect(parseDashboardFilter(null)).toBe('all');
-    expect(parseDashboardFilter('')).toBe('all');
-  });
-});
-
-describe('matchesDashboardFilter', () => {
-  it('"all" matches every status', () => {
-    for (const status of ['needs_review', 'awaiting_recipient', 'complete'] as const) {
-      expect(matchesDashboardFilter(dashboardCase({ status }), 'all')).toBe(true);
-    }
-  });
-
-  it('a specific filter matches only its own status', () => {
-    expect(matchesDashboardFilter(dashboardCase({ status: 'needs_review' }), 'needs_review')).toBe(true);
-    expect(matchesDashboardFilter(dashboardCase({ status: 'needs_review' }), 'complete')).toBe(false);
-  });
-});
-
-describe('filterCounts', () => {
-  it('tallies every status plus a total', () => {
-    const rows = [
-      dashboardCase({ status: 'needs_review' }),
-      dashboardCase({ status: 'needs_review' }),
-      dashboardCase({ status: 'awaiting_recipient' }),
-      dashboardCase({ status: 'complete' }),
-    ];
-    expect(filterCounts(rows)).toEqual({ all: 4, needs_review: 2, awaiting_recipient: 1, complete: 1 });
-  });
-
-  it('is all zero for an empty list', () => {
-    expect(filterCounts([])).toEqual({ all: 0, needs_review: 0, awaiting_recipient: 0, complete: 0 });
-  });
-});
 
 describe('sortForDashboard', () => {
   it('puts needs_review before awaiting_recipient before complete', () => {

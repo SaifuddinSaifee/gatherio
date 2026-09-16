@@ -1,37 +1,11 @@
 /**
- * Pure dashboard shaping (Stage 8.5) — filtering and sorting take
- * `DashboardCase[]` (case.ts's `listCases`) and do no I/O, so they're
- * unit-tested without a database, the same split as case-status.ts.
+ * Pure dashboard shaping (Stage 8.5) — sorting takes `DashboardCase[]`
+ * (case.ts's `listCases`) and does no I/O, so it's unit-tested without a
+ * database, the same split as case-status.ts. Filtering lives in
+ * dashboard-table.ts, shared by the table and list views.
  */
 
 import type { DashboardCase } from './case';
-
-export const DASHBOARD_FILTERS = ['all', 'needs_review', 'awaiting_recipient', 'complete'] as const;
-export type DashboardFilter = (typeof DASHBOARD_FILTERS)[number];
-
-export function parseDashboardFilter(raw: string | null | undefined): DashboardFilter {
-  return (DASHBOARD_FILTERS as readonly string[]).includes(raw ?? '')
-    ? (raw as DashboardFilter)
-    : 'all';
-}
-
-export function matchesDashboardFilter(row: DashboardCase, filter: DashboardFilter): boolean {
-  if (filter === 'all') return true;
-  return row.status === filter;
-}
-
-export interface DashboardFilterCounts {
-  all: number;
-  needs_review: number;
-  awaiting_recipient: number;
-  complete: number;
-}
-
-export function filterCounts(rows: readonly DashboardCase[]): DashboardFilterCounts {
-  const counts: DashboardFilterCounts = { all: rows.length, needs_review: 0, awaiting_recipient: 0, complete: 0 };
-  for (const row of rows) counts[row.status] += 1;
-  return counts;
-}
 
 /**
  * Needs-your-review cases first (the requester's own move), oldest

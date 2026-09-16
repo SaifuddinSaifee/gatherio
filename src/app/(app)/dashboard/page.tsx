@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import { MdError, MdFolderOpen, MdSend } from 'react-icons/md';
 import { getCurrentSession } from '@/db/session';
 import { listCases } from '@/lib/domain/case';
-import { parseDashboardFilter, sortForDashboard } from '@/lib/domain/dashboard';
+import { sortForDashboard } from '@/lib/domain/dashboard';
 import { parseCaseTableState, toCaseTableRow } from '@/lib/domain/dashboard-table';
 import {
   DASHBOARD_HIDDEN_COLUMNS_COOKIE,
@@ -11,9 +11,8 @@ import {
   parseHiddenColumns,
 } from '@/lib/dashboard-prefs';
 import { Card } from '@/components/ui/card';
+import { CaseCard } from './case-card';
 import { CasesDashboard } from './cases-dashboard';
-import { CasesList } from './cases-list';
-import { CasesTable } from './cases-table';
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -59,6 +58,7 @@ export default async function DashboardPage({
   const now = new Date();
 
   const allCases = await listCases(session.workspaceId, now);
+  const sorted = sortForDashboard(allCases);
 
   const notice = first(params.notice);
   const error = first(params.error);
@@ -99,29 +99,15 @@ export default async function DashboardPage({
           )}
         </>
       }
-      views={
-        allCases.length === 0
-          ? null
-          : {
-              table: (
-                <CasesTable
-                  rows={sortForDashboard(allCases).map((row) => toCaseTableRow(row, now))}
-                  now={now}
-                  initialState={parseCaseTableState(params)}
-                  hiddenColumns={parseHiddenColumns(
-                    cookieStore.get(DASHBOARD_HIDDEN_COLUMNS_COOKIE)?.value,
-                  )}
-                />
-              ),
-              list: (
-                <CasesList
-                  cases={allCases}
-                  filter={parseDashboardFilter(first(params.filter))}
-                  now={now}
-                />
-              ),
-            }
-      }
+      initialState={parseCaseTableState(params)}
+      rows={sorted.map((row) => toCaseTableRow(row, now))}
+      cards={Object.fromEntries(
+        sorted.map((row) => [row.case.id, <CaseCard key={row.case.id} row={row} now={now} />]),
+      )}
+      now={now}
+      initialHiddenColumns={parseHiddenColumns(
+        cookieStore.get(DASHBOARD_HIDDEN_COLUMNS_COOKIE)?.value,
+      )}
       empty={
         <Card className="flex items-center gap-3">
           <MdFolderOpen

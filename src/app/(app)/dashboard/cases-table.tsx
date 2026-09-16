@@ -1,38 +1,13 @@
 'use client';
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import Link from 'next/link';
-import {
-  MdCheckCircle,
-  MdError,
-  MdMailOutline,
-  MdEventBusy,
-  MdMarkEmailUnread,
-  MdRateReview,
-  MdReplay,
-  MdSchedule,
-  MdSend,
-  MdVisibility,
-  MdVisibilityOff,
-} from 'react-icons/md';
-import { Button, ButtonLink } from '@/components/ui/button';
+import { MdError, MdMailOutline, MdRateReview, MdSend, MdVisibility } from 'react-icons/md';
+import { ButtonLink } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { DataTable } from '@/components/ui/data-table/data-table';
 import { DataTableColumnHeader } from '@/components/ui/data-table/data-table-column-header';
-import {
-  DataTableFacetedFilter,
-  type FacetOption,
-} from '@/components/ui/data-table/data-table-faceted-filter';
 import { DataTablePagination } from '@/components/ui/data-table/data-table-pagination';
-import { DataTableSearch } from '@/components/ui/data-table/data-table-search';
 import { DataTableSelectionBar } from '@/components/ui/data-table/data-table-selection-bar';
 import { DataTableViewOptions } from '@/components/ui/data-table/data-table-view-options';
 import { createSelectColumn } from '@/components/ui/data-table/select-column';
@@ -43,59 +18,28 @@ import {
 } from '@/components/ui/data-table/use-data-table';
 import { sendReminderAction, sendRemindersAction } from '@/app/(app)/cases/actions';
 import {
-  CASE_FLAGS,
-  CASE_STATUSES,
   EMPTY_FILTERS,
   PAGE_SIZES,
   SORTABLE_COLUMN_IDS,
-  caseTableStateToSearchParams,
-  facetCounts,
   filterCaseRows,
-  hasActiveFilters,
-  type CaseFlag,
   type CaseStatus,
   type CaseTableFilters,
   type CaseTableRow,
-  type CaseTableState,
+  type CaseTableView,
   type HideableColumnId,
   type PageSize,
   type SortableColumnId,
 } from '@/lib/domain/dashboard-table';
 import {
   DASHBOARD_HIDDEN_COLUMNS_COOKIE,
+  parseHiddenColumns,
   serializeHiddenColumns,
   writeDashboardPrefCookie,
 } from '@/lib/dashboard-prefs';
 import { formatDate, formatDateTime, formatRelative } from '@/lib/format-time';
 import { cn } from '@/lib/cn';
-
-const STATUS_LABEL: Record<CaseStatus, string> = {
-  needs_review: 'Needs review',
-  awaiting_recipient: 'Waiting on recipient',
-  complete: 'Complete',
-};
-
-const STATUS_ICON = {
-  needs_review: MdRateReview,
-  awaiting_recipient: MdSchedule,
-  complete: MdCheckCircle,
-};
-
-const FLAG_LABEL: Record<CaseFlag, string> = {
-  overdue: 'Overdue',
-  due_soon: 'Due within 7 days',
-  never_opened: 'Link never opened',
-  email_failed: 'Last email failed',
-  changes_requested: 'Changes requested',
-};
-
-const FLAG_ICON = {
-  overdue: MdEventBusy,
-  due_soon: MdSchedule,
-  never_opened: MdVisibilityOff,
-  email_failed: MdMarkEmailUnread,
-  changes_requested: MdReplay,
-};
+import { CaseFilterToolbar, NoFilterMatches, STATUS_ICON, STATUS_LABEL } from './case-filters';
+import { ReturnQueryInput } from './return-query';
 
 const STATUS_RANK: Record<CaseStatus, number> = {
   needs_review: 0,
@@ -107,11 +51,8 @@ function acceptedRatio(row: CaseTableRow): number {
   return row.counts.required === 0 ? 1 : row.counts.accepted / row.counts.required;
 }
 
-/** Changes on every filter/sort/page move, which is why cells read it from context rather than from the (memoized) column definitions. */
-const TableContext = createContext<{ now: Date; returnQuery: string }>({
-  now: new Date(0),
-  returnQuery: '',
-});
+/** Cells read `now` from context because the column definitions are module-level and never re-created. */
+const TableContext = createContext<{ now: Date }>({ now: new Date(0) });
 
 /**
  * Box sizing for the status badge — height, padding, icon gap. Kept apart
@@ -159,7 +100,6 @@ function RelativeTime({ at }: { at: Date }) {
 }
 
 function RowActions({ row }: { row: CaseTableRow }) {
-  const { returnQuery } = useContext(TableContext);
   return (
     <div className="flex items-center justify-end gap-2">
       {row.status === 'needs_review' && (
@@ -177,7 +117,7 @@ function RowActions({ row }: { row: CaseTableRow }) {
         <form action={sendReminderAction}>
           <input type="hidden" name="caseId" value={row.id} />
           <input type="hidden" name="returnTo" value="dashboard" />
-          <input type="hidden" name="returnQuery" value={returnQuery} />
+          <ReturnQueryInput />
           <SubmitButton
             variant="tonal"
             size="sm"
@@ -400,49 +340,48 @@ interface CasesTableProps {
   /** Already in the dashboard's priority order — the table's order when no column is sorted. */
   rows: CaseTableRow[];
   now: Date;
-  initialState: CaseTableState;
+  filters: CaseTableFilters;
+  onFiltersChange: (patch: Partial<CaseTableFilters>) => void;
+  /** Sort and pagination to start from; reported back as they change so they survive a view switch. */
+  view: CaseTableView;
+  onViewChange: (view: CaseTableView) => void;
   hiddenColumns: HideableColumnId[];
+  onHiddenColumnsChange: (ids: HideableColumnId[]) => void;
 }
 
-export function CasesTable({ rows, now, initialState, hiddenColumns }: CasesTableProps) {
-  const [filters, setFilters] = useState<CaseTableFilters>({
-    query: initialState.query,
-    statuses: initialState.statuses,
-    templates: initialState.templates,
-    flags: initialState.flags,
-  });
-
+export function CasesTable({
+  rows,
+  now,
+  filters,
+  onFiltersChange,
+  view,
+  onViewChange,
+  hiddenColumns,
+  onHiddenColumnsChange,
+}: CasesTableProps) {
   const filteredRows = useMemo(() => filterCaseRows(rows, filters), [rows, filters]);
-  const facets = useMemo(() => facetCounts(rows, filters), [rows, filters]);
 
   const table = useDataTable({
     data: filteredRows,
     columns: COLUMNS,
     getRowId: (row) => row.id,
     initialState: {
-      sorting: initialState.sort ? [initialState.sort] : [],
-      pagination: { pageIndex: initialState.page, pageSize: initialState.pageSize },
+      sorting: view.sort ? [view.sort] : [],
+      pagination: { pageIndex: view.page, pageSize: view.pageSize },
       columnVisibility: Object.fromEntries(hiddenColumns.map((id) => [id, false])),
     },
   });
 
   const { sorting, pagination, columnVisibility } = table.state;
-  const sortEntry = sorting[0];
-  const tableState: CaseTableState = {
-    ...filters,
-    sort:
-      sortEntry && isSortableId(sortEntry.id) ? { id: sortEntry.id, desc: sortEntry.desc } : null,
-    page: pagination.pageIndex,
-    pageSize: pagination.pageSize as PageSize,
-  };
-  const returnQuery = caseTableStateToSearchParams(tableState).toString();
-
+  const sortId = sorting[0]?.id;
+  const sortDesc = sorting[0]?.desc ?? false;
   useEffect(() => {
-    const url = returnQuery ? `/dashboard?${returnQuery}` : '/dashboard';
-    if (`${window.location.pathname}${window.location.search}` !== url) {
-      window.history.replaceState(null, '', url);
-    }
-  }, [returnQuery]);
+    onViewChange({
+      sort: sortId && isSortableId(sortId) ? { id: sortId, desc: sortDesc } : null,
+      page: pagination.pageIndex,
+      pageSize: pagination.pageSize as PageSize,
+    });
+  }, [sortId, sortDesc, pagination.pageIndex, pagination.pageSize, onViewChange]);
 
   const hiddenCookieValue = serializeHiddenColumns(
     Object.entries(columnVisibility)
@@ -454,7 +393,8 @@ export function CasesTable({ rows, now, initialState, hiddenColumns }: CasesTabl
     if (hiddenCookieValue === initialHiddenCookieValue.current) return;
     initialHiddenCookieValue.current = hiddenCookieValue;
     writeDashboardPrefCookie(DASHBOARD_HIDDEN_COLUMNS_COOKIE, hiddenCookieValue);
-  }, [hiddenCookieValue]);
+    onHiddenColumnsChange(parseHiddenColumns(hiddenCookieValue));
+  }, [hiddenCookieValue, onHiddenColumnsChange]);
 
   // A server refresh (e.g. after sending reminders) hands over new rows; selections from before it no longer mean anything.
   const lastRows = useRef(rows);
@@ -470,83 +410,29 @@ export function CasesTable({ rows, now, initialState, hiddenColumns }: CasesTabl
   }, [pageCount, pagination.pageIndex, table]);
 
   function updateFilters(patch: Partial<CaseTableFilters>) {
-    setFilters((current) => ({ ...current, ...patch }));
+    onFiltersChange(patch);
     table.setPageIndex(0);
   }
 
-  const statusOptions: FacetOption<CaseStatus>[] = CASE_STATUSES.map((status) => ({
-    value: status,
-    label: STATUS_LABEL[status],
-    count: facets.statuses[status],
-    icon: STATUS_ICON[status],
-  }));
-  const templateOptions: FacetOption<string>[] = facets.templates.map(({ name, count }) => ({
-    value: name,
-    label: name,
-    count,
-  }));
-  const flagOptions: FacetOption<CaseFlag>[] = CASE_FLAGS.map((flag) => ({
-    value: flag,
-    label: FLAG_LABEL[flag],
-    count: facets.flags[flag],
-    icon: FLAG_ICON[flag],
-  }));
-
   const selectedRows = table.getSelectedRowModel().rows.map((row) => row.original);
   const remindable = selectedRows.filter((row) => row.reminder.ok);
-  const filtersActive = hasActiveFilters(filters);
 
   return (
-    <TableContext.Provider value={{ now, returnQuery }}>
+    <TableContext.Provider value={{ now }}>
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <DataTableSearch
-            label="Search cases, recipients, or templates"
-            value={filters.query}
-            onChange={(query) => updateFilters({ query })}
-            className="w-full sm:w-80"
-          />
-          <DataTableFacetedFilter
-            title="Status"
-            options={statusOptions}
-            selected={filters.statuses}
-            onChange={(statuses) => updateFilters({ statuses })}
-          />
-          {templateOptions.length > 1 && (
-            <DataTableFacetedFilter
-              title="Template"
-              options={templateOptions}
-              selected={filters.templates}
-              onChange={(templates) => updateFilters({ templates })}
-            />
-          )}
-          <DataTableFacetedFilter
-            title="Needs attention"
-            options={flagOptions}
-            selected={filters.flags}
-            onChange={(flags) => updateFilters({ flags })}
-          />
-          {filtersActive && (
-            <Button
-              variant="text"
-              size="sm"
-              className="px-3"
-              onClick={() => updateFilters(EMPTY_FILTERS)}
-            >
-              Clear filters
-            </Button>
-          )}
-          <div className="ml-auto">
-            <DataTableViewOptions table={table} />
-          </div>
-        </div>
+        <CaseFilterToolbar
+          rows={rows}
+          filters={filters}
+          onChange={updateFilters}
+          trailing={<DataTableViewOptions table={table} />}
+        />
 
         <DataTableSelectionBar table={table} noun={['case', 'cases']}>
           <form action={sendRemindersAction}>
             {remindable.map((row) => (
               <input key={row.id} type="hidden" name="caseId" value={row.id} />
             ))}
-            <input type="hidden" name="returnQuery" value={returnQuery} />
+            <ReturnQueryInput />
             <SubmitButton
               variant="filled"
               className="h-9"
@@ -568,16 +454,7 @@ export function CasesTable({ rows, now, initialState, hiddenColumns }: CasesTabl
         <DataTable
           table={table}
           caption="Cases"
-          emptyState={
-            <div className="flex flex-col items-center gap-2">
-              <p className="text-body-medium text-md-on-surface-variant">
-                No cases match these filters.
-              </p>
-              <Button variant="text" onClick={() => updateFilters(EMPTY_FILTERS)}>
-                Clear filters
-              </Button>
-            </div>
-          }
+          emptyState={<NoFilterMatches onClear={() => updateFilters(EMPTY_FILTERS)} />}
         />
 
         <DataTablePagination table={table} pageSizes={PAGE_SIZES} itemsLabel="cases" />
