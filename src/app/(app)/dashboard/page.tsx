@@ -76,8 +76,8 @@ export default async function DashboardPage({
         <h1 className="text-headline-small font-medium text-md-on-surface">Cases</h1>
         <div className="flex flex-wrap items-center gap-3">
           {allCases.length > 0 && <ViewSwitcher view={view} />}
-          <ButtonLink href="/cases/new" variant="filled">
-            <MdAdd aria-hidden="true" className="h-4.5 w-4.5" />
+          <ButtonLink href="/cases/new" variant="filled" size="sm">
+            <MdAdd aria-hidden="true" className="h-4 w-4" />
             New case
           </ButtonLink>
         </div>

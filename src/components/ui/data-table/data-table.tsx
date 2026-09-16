@@ -21,7 +21,11 @@ interface DataTableProps<TData extends RowData> {
  * Scrolls horizontally inside its own container so the page body never
  * does.
  */
-export function DataTable<TData extends RowData>({ table, caption, emptyState }: DataTableProps<TData>) {
+export function DataTable<TData extends RowData>({
+  table,
+  caption,
+  emptyState,
+}: DataTableProps<TData>) {
   const rows = table.getRowModel().rows;
   const columnCount = table.getVisibleLeafColumns().length;
 
@@ -32,7 +36,10 @@ export function DataTable<TData extends RowData>({ table, caption, emptyState }:
         <caption className="sr-only">{caption}</caption>
         <thead>
           {table.getHeaderGroups().map((group) => (
-            <tr key={group.id} className="border-b border-md-outline-variant bg-md-surface-container-low">
+            <tr
+              key={group.id}
+              className="border-b border-md-outline-variant bg-md-surface-container-low"
+            >
               {group.headers.map((header) => {
                 const meta = header.column.columnDef.meta;
                 const sorted = header.column.getIsSorted();
@@ -50,7 +57,7 @@ export function DataTable<TData extends RowData>({ table, caption, emptyState }:
                         : undefined
                     }
                     className={cn(
-                      'h-12 whitespace-nowrap px-4 text-label-large font-medium text-md-on-surface-variant',
+                      'h-9 whitespace-nowrap px-4 text-table-header font-medium text-md-on-surface-variant',
                       meta?.align === 'end' && 'text-right',
                       meta?.headerClassName,
                     )}
@@ -87,7 +94,7 @@ export function DataTable<TData extends RowData>({ table, caption, emptyState }:
                       <td
                         key={cell.id}
                         className={cn(
-                          'px-4 py-3 align-top text-body-medium text-md-on-surface',
+                          'px-4 py-1.5 align-top text-table-cell text-md-on-surface',
                           meta?.align === 'end' && 'text-right',
                           meta?.cellClassName,
                         )}

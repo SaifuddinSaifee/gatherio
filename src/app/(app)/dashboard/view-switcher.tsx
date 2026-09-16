@@ -19,6 +19,7 @@ export function ViewSwitcher({ view }: { view: DashboardView }) {
       aria-label="Dashboard view"
       options={OPTIONS}
       value={optimisticView}
+      size="sm"
       onChange={(next) => {
         if (next === optimisticView) return;
         startTransition(async () => {

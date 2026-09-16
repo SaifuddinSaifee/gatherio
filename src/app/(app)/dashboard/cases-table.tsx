@@ -1,6 +1,14 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import Link from 'next/link';
 import {
   MdCheckCircle,
@@ -19,7 +27,10 @@ import { Button, ButtonLink } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { DataTable } from '@/components/ui/data-table/data-table';
 import { DataTableColumnHeader } from '@/components/ui/data-table/data-table-column-header';
-import { DataTableFacetedFilter, type FacetOption } from '@/components/ui/data-table/data-table-faceted-filter';
+import {
+  DataTableFacetedFilter,
+  type FacetOption,
+} from '@/components/ui/data-table/data-table-faceted-filter';
 import { DataTablePagination } from '@/components/ui/data-table/data-table-pagination';
 import { DataTableSearch } from '@/components/ui/data-table/data-table-search';
 import { DataTableSelectionBar } from '@/components/ui/data-table/data-table-selection-bar';
@@ -64,7 +75,11 @@ const STATUS_LABEL: Record<CaseStatus, string> = {
   complete: 'Complete',
 };
 
-const STATUS_ICON = { needs_review: MdRateReview, awaiting_recipient: MdSchedule, complete: MdCheckCircle };
+const STATUS_ICON = {
+  needs_review: MdRateReview,
+  awaiting_recipient: MdSchedule,
+  complete: MdCheckCircle,
+};
 
 const FLAG_LABEL: Record<CaseFlag, string> = {
   overdue: 'Overdue',
@@ -82,27 +97,45 @@ const FLAG_ICON = {
   changes_requested: MdReplay,
 };
 
-const STATUS_RANK: Record<CaseStatus, number> = { needs_review: 0, awaiting_recipient: 1, complete: 2 };
+const STATUS_RANK: Record<CaseStatus, number> = {
+  needs_review: 0,
+  awaiting_recipient: 1,
+  complete: 2,
+};
 
 function acceptedRatio(row: CaseTableRow): number {
   return row.counts.required === 0 ? 1 : row.counts.accepted / row.counts.required;
 }
 
 /** Changes on every filter/sort/page move, which is why cells read it from context rather than from the (memoized) column definitions. */
-const TableContext = createContext<{ now: Date; returnQuery: string }>({ now: new Date(0), returnQuery: '' });
+const TableContext = createContext<{ now: Date; returnQuery: string }>({
+  now: new Date(0),
+  returnQuery: '',
+});
+
+/**
+ * Box sizing for the status badge — height, padding, icon gap. Kept apart
+ * from the per-status colors below. Its font size is the `--text-badge`
+ * role in globals.css.
+ */
+const STATUS_BADGE_CLASS =
+  'inline-flex h-5 items-center gap-1 rounded-sm px-1.5 text-badge leading-none font-medium whitespace-nowrap';
+/** Icon inside the badge — keep roughly matched to STATUS_BADGE_CLASS's font size. */
+const STATUS_BADGE_ICON_CLASS = 'h-2.75 w-2.75';
 
 function StatusBadge({ status }: { status: CaseStatus }) {
   const Icon = STATUS_ICON[status];
   return (
     <span
       className={cn(
-        'inline-flex h-6 items-center gap-1 rounded-sm px-2 text-label-medium font-medium whitespace-nowrap',
+        STATUS_BADGE_CLASS,
         status === 'needs_review' && 'bg-md-tertiary-container text-md-on-tertiary-container',
-        status === 'awaiting_recipient' && 'bg-md-surface-container-highest text-md-on-surface-variant',
+        status === 'awaiting_recipient' &&
+          'bg-md-surface-container-highest text-md-on-surface-variant',
         status === 'complete' && 'bg-md-primary-container text-md-on-primary-container',
       )}
     >
-      <Icon aria-hidden="true" className="h-4 w-4" />
+      <Icon aria-hidden="true" className={STATUS_BADGE_ICON_CLASS} />
       {STATUS_LABEL[status]}
     </span>
   );
@@ -115,7 +148,11 @@ function Muted({ children }: { children: ReactNode }) {
 function RelativeTime({ at }: { at: Date }) {
   const { now } = useContext(TableContext);
   return (
-    <time dateTime={at.toISOString()} title={formatDateTime(at)} className="text-body-small text-md-on-surface-variant">
+    <time
+      dateTime={at.toISOString()}
+      title={formatDateTime(at)}
+      className="text-table-cell-meta text-md-on-surface-variant"
+    >
       {formatRelative(at, now)}
     </time>
   );
@@ -126,7 +163,13 @@ function RowActions({ row }: { row: CaseTableRow }) {
   return (
     <div className="flex items-center justify-end gap-2">
       {row.status === 'needs_review' && (
-        <ButtonLink href={`/cases/${row.id}`} variant="text" className="h-8 px-3" aria-label={`Review ${row.name}`}>
+        <ButtonLink
+          href={`/cases/${row.id}`}
+          variant="text"
+          size="sm"
+          className="px-3"
+          aria-label={`Review ${row.name}`}
+        >
           Review
         </ButtonLink>
       )}
@@ -135,7 +178,13 @@ function RowActions({ row }: { row: CaseTableRow }) {
           <input type="hidden" name="caseId" value={row.id} />
           <input type="hidden" name="returnTo" value="dashboard" />
           <input type="hidden" name="returnQuery" value={returnQuery} />
-          <SubmitButton variant="tonal" className="h-8 px-3" pendingLabel="Sending…" aria-label={`Send reminder for ${row.name}`}>
+          <SubmitButton
+            variant="tonal"
+            size="sm"
+            className="px-3"
+            pendingLabel="Sending…"
+            aria-label={`Send reminder for ${row.name}`}
+          >
             Remind
           </SubmitButton>
         </form>
@@ -162,7 +211,9 @@ const COLUMNS: DataTableColumnDef<CaseTableRow>[] = [
         >
           {row.original.name}
         </Link>
-        <p className="text-body-small text-md-on-surface-variant">{row.original.templateName}</p>
+        <p className="text-table-cell-meta text-md-on-surface-variant">
+          {row.original.templateName}
+        </p>
       </div>
     ),
   }),
@@ -178,7 +229,9 @@ const COLUMNS: DataTableColumnDef<CaseTableRow>[] = [
       return (
         <div>
           <p>{recipient.name}</p>
-          <p className="text-body-small text-md-on-surface-variant">{recipient.organization ?? recipient.email}</p>
+          <p className="text-table-cell-meta text-md-on-surface-variant">
+            {recipient.organization ?? recipient.email}
+          </p>
         </div>
       );
     },
@@ -195,13 +248,16 @@ const COLUMNS: DataTableColumnDef<CaseTableRow>[] = [
         <div className="flex flex-col items-start gap-1.5">
           <StatusBadge status={status} />
           <div className="flex w-full items-center gap-2">
-            <div aria-hidden="true" className="h-1 flex-1 rounded-full bg-md-surface-container-highest">
+            <div
+              aria-hidden="true"
+              className="h-1 flex-1 rounded-full bg-md-surface-container-highest"
+            >
               <div
                 className="h-1 rounded-full bg-md-primary"
                 style={{ width: `${Math.round(acceptedRatio(row.original) * 100)}%` }}
               />
             </div>
-            <span className="text-body-small whitespace-nowrap text-md-on-surface-variant">
+            <span className="text-table-cell-meta whitespace-nowrap text-md-on-surface-variant">
               {counts.accepted} of {counts.required} accepted
             </span>
           </div>
@@ -209,35 +265,44 @@ const COLUMNS: DataTableColumnDef<CaseTableRow>[] = [
       );
     },
   }),
-  helper.accessor((row) => (row.status === 'needs_review' ? row.counts.needsReview : row.blockingItems.length), {
-    id: 'outstanding',
-    sortFn: 'basic',
-    meta: { label: 'Outstanding', cellClassName: 'min-w-44 max-w-64' },
-    header: ({ column }) => <DataTableColumnHeader column={column} />,
-    cell: ({ row }) => {
-      const { status, counts, blockingItems } = row.original;
-      if (status === 'complete') return <Muted>Nothing outstanding</Muted>;
-      if (status === 'needs_review') {
+  helper.accessor(
+    (row) => (row.status === 'needs_review' ? row.counts.needsReview : row.blockingItems.length),
+    {
+      id: 'outstanding',
+      sortFn: 'basic',
+      meta: { label: 'Outstanding', cellClassName: 'min-w-44 max-w-64' },
+      header: ({ column }) => <DataTableColumnHeader column={column} />,
+      cell: ({ row }) => {
+        const { status, counts, blockingItems } = row.original;
+        if (status === 'complete') return <Muted>Nothing outstanding</Muted>;
+        if (status === 'needs_review') {
+          return (
+            <p className="flex items-center gap-1.5">
+              <MdRateReview aria-hidden="true" className="h-4 w-4 shrink-0 text-md-tertiary" />
+              {counts.needsReview} to review
+            </p>
+          );
+        }
+        const [first, ...rest] = blockingItems;
+        if (!first) return <Muted>Waiting on recipient</Muted>;
         return (
-          <p className="flex items-center gap-1.5">
-            <MdRateReview aria-hidden="true" className="h-4.5 w-4.5 shrink-0 text-md-tertiary" />
-            {counts.needsReview} to review
+          <p title={blockingItems.map((item) => item.title).join('\n')}>
+            <span className="line-clamp-1">
+              {first.title}
+              {first.state === 'changes_requested' && (
+                <span className="text-md-error"> (changes requested)</span>
+              )}
+            </span>
+            {rest.length > 0 && (
+              <span className="text-table-cell-meta text-md-on-surface-variant">
+                +{rest.length} more
+              </span>
+            )}
           </p>
         );
-      }
-      const [first, ...rest] = blockingItems;
-      if (!first) return <Muted>Waiting on recipient</Muted>;
-      return (
-        <p title={blockingItems.map((item) => item.title).join('\n')}>
-          <span className="line-clamp-1">
-            {first.title}
-            {first.state === 'changes_requested' && <span className="text-md-error"> (changes requested)</span>}
-          </span>
-          {rest.length > 0 && <span className="text-body-small text-md-on-surface-variant">+{rest.length} more</span>}
-        </p>
-      );
+      },
     },
-  }),
+  ),
   helper.accessor((row) => row.dueAt ?? undefined, {
     id: 'dueAt',
     sortFn: 'datetime',
@@ -250,7 +315,7 @@ const COLUMNS: DataTableColumnDef<CaseTableRow>[] = [
       if (flags.includes('overdue')) {
         return (
           <span className="flex items-center gap-1 font-medium text-md-error">
-            <MdError aria-hidden="true" className="h-4.5 w-4.5" />
+            <MdError aria-hidden="true" className="h-4 w-4" />
             Overdue · {formatDate(dueAt)}
           </span>
         );
@@ -277,7 +342,10 @@ const COLUMNS: DataTableColumnDef<CaseTableRow>[] = [
       return (
         <div className="flex flex-col gap-0.5">
           <p className="flex items-center gap-1.5">
-            <MdVisibility aria-hidden="true" className="h-4 w-4 shrink-0 text-md-on-surface-variant" />
+            <MdVisibility
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0 text-md-on-surface-variant"
+            />
             {lastActivity ? (
               <>
                 {lastActivity.label} <RelativeTime at={lastActivity.at} />
@@ -287,7 +355,10 @@ const COLUMNS: DataTableColumnDef<CaseTableRow>[] = [
             )}
           </p>
           <p className="flex items-center gap-1.5">
-            <MdMailOutline aria-hidden="true" className="h-4 w-4 shrink-0 text-md-on-surface-variant" />
+            <MdMailOutline
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0 text-md-on-surface-variant"
+            />
             {!lastContact ? (
               <Muted>Not contacted</Muted>
             ) : lastContact.failed ? (
@@ -296,7 +367,8 @@ const COLUMNS: DataTableColumnDef<CaseTableRow>[] = [
               </span>
             ) : (
               <>
-                {lastContact.kind === 'invite' ? 'Invite sent' : 'Reminded'} <RelativeTime at={lastContact.at} />
+                {lastContact.kind === 'invite' ? 'Invite sent' : 'Reminded'}{' '}
+                <RelativeTime at={lastContact.at} />
               </>
             )}
           </p>
@@ -358,7 +430,8 @@ export function CasesTable({ rows, now, initialState, hiddenColumns }: CasesTabl
   const sortEntry = sorting[0];
   const tableState: CaseTableState = {
     ...filters,
-    sort: sortEntry && isSortableId(sortEntry.id) ? { id: sortEntry.id, desc: sortEntry.desc } : null,
+    sort:
+      sortEntry && isSortableId(sortEntry.id) ? { id: sortEntry.id, desc: sortEntry.desc } : null,
     page: pagination.pageIndex,
     pageSize: pagination.pageSize as PageSize,
   };
@@ -455,7 +528,12 @@ export function CasesTable({ rows, now, initialState, hiddenColumns }: CasesTabl
             onChange={(flags) => updateFilters({ flags })}
           />
           {filtersActive && (
-            <Button variant="text" className="h-8 px-3" onClick={() => updateFilters(EMPTY_FILTERS)}>
+            <Button
+              variant="text"
+              size="sm"
+              className="px-3"
+              onClick={() => updateFilters(EMPTY_FILTERS)}
+            >
               Clear filters
             </Button>
           )}
@@ -470,15 +548,20 @@ export function CasesTable({ rows, now, initialState, hiddenColumns }: CasesTabl
               <input key={row.id} type="hidden" name="caseId" value={row.id} />
             ))}
             <input type="hidden" name="returnQuery" value={returnQuery} />
-            <SubmitButton variant="filled" className="h-9" disabled={remindable.length === 0} pendingLabel="Sending…">
+            <SubmitButton
+              variant="filled"
+              className="h-9"
+              disabled={remindable.length === 0}
+              pendingLabel="Sending…"
+            >
               <MdSend aria-hidden="true" className="h-4.5 w-4.5" />
               {remindable.length === 0 ? 'Send reminders' : `Send reminder to ${remindable.length}`}
             </SubmitButton>
           </form>
           {remindable.length < selectedRows.length && (
             <p className="text-body-small">
-              {selectedRows.length - remindable.length} can&apos;t be reminded right now — complete, waiting on your review,
-              no email, or reminded recently.
+              {selectedRows.length - remindable.length} can&apos;t be reminded right now — complete,
+              waiting on your review, no email, or reminded recently.
             </p>
           )}
         </DataTableSelectionBar>
@@ -488,7 +571,9 @@ export function CasesTable({ rows, now, initialState, hiddenColumns }: CasesTabl
           caption="Cases"
           emptyState={
             <div className="flex flex-col items-center gap-2">
-              <p className="text-body-medium text-md-on-surface-variant">No cases match these filters.</p>
+              <p className="text-body-medium text-md-on-surface-variant">
+                No cases match these filters.
+              </p>
               <Button variant="text" onClick={() => updateFilters(EMPTY_FILTERS)}>
                 Clear filters
               </Button>

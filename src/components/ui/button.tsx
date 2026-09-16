@@ -3,9 +3,12 @@ import Link from 'next/link';
 import { cn } from '@/lib/cn';
 
 type ButtonVariant = 'filled' | 'tonal' | 'outlined' | 'text';
+type ButtonSize = 'sm' | 'md';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
+  /** 'md' (default) is the standard Material button. 'sm' is for dense contexts — a table toolbar, a row's inline actions. */
+  size?: ButtonSize;
   fullWidth?: boolean;
 }
 
@@ -45,10 +48,21 @@ const VARIANT_STYLES: Record<
   },
 };
 
-function buttonClassName(variant: ButtonVariant, fullWidth: boolean | undefined, className: string | undefined) {
+const SIZE_STYLES: Record<ButtonSize, string> = {
+  md: 'h-10 gap-2 px-6 text-button',
+  sm: 'h-8 gap-1.5 px-4 text-button-sm',
+};
+
+function buttonClassName(
+  variant: ButtonVariant,
+  size: ButtonSize,
+  fullWidth: boolean | undefined,
+  className: string | undefined,
+) {
   const styles = VARIANT_STYLES[variant];
   return cn(
-    'group relative inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-full px-6 text-label-large font-medium transition-shadow duration-(--duration-effects-default) ease-md-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-md-on-surface/12 disabled:text-md-on-surface/38 disabled:shadow-elevation-0',
+    'group relative inline-flex cursor-pointer items-center justify-center rounded-full font-medium transition-shadow duration-(--duration-effects-default) ease-md-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-md-on-surface/12 disabled:text-md-on-surface/38 disabled:shadow-elevation-0',
+    SIZE_STYLES[size],
     fullWidth && 'w-full',
     styles.container,
     styles.elevation,
@@ -70,29 +84,41 @@ function ButtonContent({ variant, children }: { variant: ButtonVariant; children
 
 export function Button({
   variant = 'filled',
+  size = 'md',
   fullWidth,
   className,
   children,
   ...props
 }: ButtonProps) {
   return (
-    <button className={buttonClassName(variant, fullWidth, className)} {...props}>
+    <button className={buttonClassName(variant, size, fullWidth, className)} {...props}>
       <ButtonContent variant={variant}>{children}</ButtonContent>
     </button>
   );
 }
 
-type ButtonLinkProps<RouteType> = Omit<ComponentProps<typeof Link<RouteType>>, 'className' | 'children'> & {
+type ButtonLinkProps<RouteType> = Omit<
+  ComponentProps<typeof Link<RouteType>>,
+  'className' | 'children'
+> & {
   variant?: ButtonVariant;
+  size?: ButtonSize;
   fullWidth?: boolean;
   className?: string;
   children: ReactNode;
 };
 
 /** A navigation that looks like a button — a real link, never a `<button>` nested inside an `<a>`. */
-export function ButtonLink<RouteType>({ variant = 'filled', fullWidth, className, children, ...props }: ButtonLinkProps<RouteType>) {
+export function ButtonLink<RouteType>({
+  variant = 'filled',
+  size = 'md',
+  fullWidth,
+  className,
+  children,
+  ...props
+}: ButtonLinkProps<RouteType>) {
   return (
-    <Link className={buttonClassName(variant, fullWidth, className)} {...props}>
+    <Link className={buttonClassName(variant, size, fullWidth, className)} {...props}>
       <ButtonContent variant={variant}>{children}</ButtonContent>
     </Link>
   );
