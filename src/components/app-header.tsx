@@ -22,7 +22,7 @@ export function AppHeader({
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <div className="flex items-center gap-6">
           <Link href="/dashboard">
-            <Logo className="text-title-large" />
+            <Logo className="text-headline-medium" />
           </Link>
           <AppNav />
         </div>
