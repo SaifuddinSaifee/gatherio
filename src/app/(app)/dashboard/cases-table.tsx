@@ -105,9 +105,9 @@ function RowActions({ row }: { row: CaseTableRow }) {
       {row.status === 'needs_review' && (
         <ButtonLink
           href={`/cases/${row.id}`}
-          variant="text"
+          variant="outlined"
           size="sm"
-          className="px-3"
+          className="border-md-primary px-3"
           aria-label={`Review ${row.name}`}
         >
           Review
