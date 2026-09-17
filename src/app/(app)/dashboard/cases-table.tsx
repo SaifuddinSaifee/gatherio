@@ -254,10 +254,13 @@ const COLUMNS: DataTableColumnDef<CaseTableRow>[] = [
       if (!dueAt) return <Muted>—</Muted>;
       if (flags.includes('overdue')) {
         return (
-          <span className="flex items-center gap-1 font-medium text-md-error">
-            <MdError aria-hidden="true" className="h-4 w-4" />
-            Overdue · {formatDate(dueAt)}
-          </span>
+          <div className="flex flex-col gap-0.5">
+            <span>{formatDate(dueAt)}</span>
+            <span className="flex items-center gap-1 text-table-cell-meta font-medium text-md-error">
+              <MdError aria-hidden="true" className="h-3.5 w-3.5" />
+              Overdue
+            </span>
+          </div>
         );
       }
       return <span>{formatDate(dueAt)}</span>;
