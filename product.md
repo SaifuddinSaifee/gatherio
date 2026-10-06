@@ -1,6 +1,6 @@
 # **What is Gather.io?**
 
-**Working name:** Gather.io (brand and domain decision deliberately open) **Owner:** Saifuddin Saifee **Status:** In build. The core collection loop (templates → cases → recipient submission → review and rework) is built and verified; reminders, dashboard/export, and roles are not. Next up is Stage 8.5, a trimmed slice: a requester dashboard showing what is blocking each case, plus a manual email reminder (build status lives in [CHECKLIST.md](CHECKLIST.md)). Informal problem conversations held (a banker and a few others); no structured discovery interviews or paid pilots yet. **Version:** 1.1 **Date:** September 2026
+**Working name:** Gather.io (brand and domain decision deliberately open) **Owner:** Saifuddin Saifee **Status:** In build. The core collection loop (templates → cases → recipient submission → review and rework) is built and verified, as are the requester dashboard (table and list views, showing what is blocking each case) and manual email reminders (Stages 8.5–8.6). Automated reminders, packet export, and roles are not. Build status lives in [CHECKLIST.md](CHECKLIST.md). Informal problem conversations held (a banker and a few others); no structured discovery interviews or paid pilots yet. **Version:** 1.1 **Date:** September 2026
 
 Gather.io is **external request completion software**.
 
@@ -70,7 +70,7 @@ These are decisions made while building that the rest of this document did not p
 
 ### What it does not yet do
 
-No automated reminders; no requester dashboard showing what is blocking each case; no packet export; single party per case only; one user per workspace with an owner/member split instead of the five-role ladder; no step-up authentication beyond the link itself; malware scanning and production email delivery are interfaces with development stand-ins. Multi-party cases, carry-forward, and expiry — the three structural differentiators argued for above — exist as schema seams, with no product behaviour yet.
+No automated (scheduled) reminders — only a manual, email-only "Send reminder"; no packet export; single party per case only; one user per workspace with an owner/member split instead of the five-role ladder; no step-up authentication beyond the link itself; malware scanning and production email delivery are interfaces with development stand-ins. Multi-party cases, carry-forward, and expiry — the three structural differentiators argued for above — exist as schema seams, with no product behaviour yet.
 
 ---
 

@@ -2,6 +2,22 @@
 
 Notable changes to Gather, grouped by build stage (see `CHECKLIST.md` and `product.md`). This project ships in stages rather than versions, so entries are dated and named by stage instead of semver.
 
+## Stage 8.6 — Dashboard views: data table and list (2026-09-16)
+
+- **Added:** a reusable TanStack Table v9 data-table kit (`src/components/ui/data-table/`, design-revised.md §55A) with `Checkbox`, `Popover`, `IconButton` and `ButtonLink` primitives.
+- **Added:** the dashboard's table view as the default (search, status/template/attention facets, sorting, column toggle, pagination, URL-synced state) and a refined grouped list view; the chosen view and hidden columns are remembered per browser via `path=/` cookies.
+- **Added:** bulk "Send reminder" (`sendManualReminders`, capped at 100, reports sent/skipped/failed).
+- **Fixed:** view preference lost after sign-in (cookie path), 390px horizontal overflow, ten-column table pushing actions off-screen, and a case-setup e2e helper that matched `/cases/new`.
+- **Tests:** 248 Vitest tests, 16/16 Playwright specs (with `--workers=1`).
+- **Follow-on polish (after verification):** table typography, overdue display, button styling and `AppHeader` hierarchy tweaks.
+
+## Stage 8.5 — Dashboard and manual reminders (2026-09-16)
+
+- **Added:** one-click manual email reminder that names only blocking items (required or changes-requested), with an optional plain-text note, a fresh link, and a server-enforced cooldown (`REMINDER_COOLDOWN_SECONDS`, default 900) taken under a case row lock (claim → send → finalize).
+- **Added:** `delivery_attempt` rows for invites and reminders, a `failed` delivery status, `reminder_dispatch.trigger_type`, and `case_reminder_unopened` / `case_reminder_stalled` copy.
+- **Added:** a Reminders card on the case page, and per-case blocking items, last activity and last contact on the dashboard.
+- **Known gap:** no dedicated `stage8-5-reminders.spec.ts` yet; Mailpit-content assertions are unwritten.
+
 ## Post-Stage-7 — Real download filenames (2026-09-12)
 
 Suggested commit message:
