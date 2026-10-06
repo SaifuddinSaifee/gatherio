@@ -5,7 +5,7 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? 'postgresql://gatherio:gatherio@localhost:5433/gatherio',
+    url: process.env.DATABASE_URL ?? 'postgresql://gatherio:gatherio@localhost:5434/gatherio',
   },
   strict: true,
   verbose: true,

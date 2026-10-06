@@ -4,7 +4,7 @@ import { db } from './client';
 /**
  * Dev-only. Truncates every table this app owns, cascading, and restarts
  * identities. Safe here because it only ever runs against the local
- * docker-compose Postgres (DATABASE_URL points at :5433).
+ * docker-compose Postgres (DATABASE_URL points at :5434).
  */
 const TABLES = [
   'audit_event',

@@ -25,7 +25,7 @@ Last updated: 2026-09-07 (Stage 6 — magic links and the recipient page — **c
 - [x] `pnpm` project scaffolded (`package.json`, scripts for dev/build/worker/db/test)
 - [x] Next.js App Router + TypeScript strict mode (`tsconfig.json`, `next.config.ts`)
 - [x] ESLint flat config (`eslint.config.mjs`) + Prettier (`prettier.config.mjs`)
-- [x] `docker-compose.yml` — Postgres 16 on `:5433` (avoids Homebrew's `:5432`) + Mailpit on `:1025`/`:8025`
+- [x] `docker-compose.yml` — Postgres 16 on `:5434` (avoids Homebrew's `:5432` and other projects on `:5433`) + Mailpit on `:1025`/`:8025`
 - [x] `.env.example` with every adapter defaulted to local (no cloud accounts needed)
 - [x] `README.md` with one-command start instructions
 - [x] Directory shape created: `app/(app)`, `app/r/[token]`, `app/api`, `db/schema`, `lib/adapters`, `lib/domain`, `worker/jobs`, `components/ui`

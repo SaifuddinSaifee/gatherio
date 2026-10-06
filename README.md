@@ -61,7 +61,7 @@ local implementation — no cloud account or API key is needed to run this.
 git clone <this-repo> && cd gatherio
 cp .env.example .env.local   # read by `next dev`
 cp .env.example .env         # read by drizzle-kit and the worker
-docker compose up -d         # Postgres on :5433, Mailpit on :8025
+docker compose up -d         # Postgres on :5434, Mailpit on :8025
 pnpm install
 pnpm db:migrate
 pnpm db:seed                 # creates demo workspace/template/case data
@@ -72,7 +72,7 @@ pnpm dev                     # http://localhost:3000
 `drizzle-kit` and the worker process only read `.env`. Both need the same
 values, so copy the example to both rather than symlinking or picking one.
 
-**Postgres is on port `5433`, not `5432`,** specifically so it doesn't
+**Postgres is on port `5434`, not `5432`,** specifically so it doesn't
 collide with a Homebrew/system Postgres you might already have running.
 
 **What `pnpm db:seed` actually gives you:** a demo workspace ("Demo
