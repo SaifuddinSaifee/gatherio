@@ -1,85 +1,124 @@
-import Link from 'next/link';
-import { MdAdd, MdCheckCircle, MdFolderOpen, MdRateReview } from 'react-icons/md';
+import { cookies } from 'next/headers';
+import { MdError, MdFolderOpen, MdSend } from 'react-icons/md';
 import { getCurrentSession } from '@/db/session';
-import { getWorkspaceById } from '@/db/workspace';
 import { listCases } from '@/lib/domain/case';
-import type { CaseStatusCounts, CaseStatusResult } from '@/lib/domain/case-status';
-import { AppHeader } from '@/components/app-header';
+import { sortForDashboard } from '@/lib/domain/dashboard';
+import { parseCaseTableState, toCaseTableRow } from '@/lib/domain/dashboard-table';
+import {
+  DASHBOARD_HIDDEN_COLUMNS_COOKIE,
+  DASHBOARD_VIEW_COOKIE,
+  parseDashboardView,
+  parseHiddenColumns,
+} from '@/lib/dashboard-prefs';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { CaseCard } from './case-card';
+import { CasesDashboard } from './cases-dashboard';
 
-/**
- * Stage 7: "submitted" stopped being the interesting fact once review
- * exists. `needs_review` outranks `awaiting_recipient` here the same way
- * it does in deriveCaseStatus — it's the requester's own move, so it's
- * the more urgent thing to surface on their own dashboard.
- */
-function summaryLabel(status: CaseStatusResult['status'], counts: CaseStatusCounts): string {
-  if (status === 'complete') return 'Complete';
-  if (status === 'needs_review') return `Needs review · ${counts.needsReview}`;
-  return `${counts.accepted} of ${counts.required} accepted`;
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
-export default async function DashboardPage() {
+function count(value: string | string[] | undefined): number {
+  const n = Number.parseInt(first(value) ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** The outcome line after a bulk send — every case accounted for, with what to do about the ones that didn't go. */
+function bulkReminderNotice(params: SearchParams): { text: string; failed: boolean } {
+  const sent = count(params.sent);
+  const skipped = count(params.skipped);
+  const failed = count(params.failed);
+  const parts = [`Sent ${plural(sent, 'reminder', 'reminders')}.`];
+  if (skipped > 0) {
+    parts.push(
+      `${plural(skipped, 'case was', 'cases were')} skipped — complete, waiting on your review, no email, or reminded recently.`,
+    );
+  }
+  if (failed > 0) parts.push(`${plural(failed, 'email', 'emails')} failed to send — try again.`);
+  return { text: parts.join(' '), failed: failed > 0 };
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   const session = await getCurrentSession();
   if (!session) return null; // AppLayout already redirects; narrows the type below.
 
-  const [workspace, cases] = await Promise.all([
-    getWorkspaceById(session.workspaceId),
-    listCases(session.workspaceId),
-  ]);
+  const params = await searchParams;
+  const cookieStore = await cookies();
+  const view = parseDashboardView(cookieStore.get(DASHBOARD_VIEW_COOKIE)?.value);
+  const now = new Date();
+
+  const allCases = await listCases(session.workspaceId, now);
+  const sorted = sortForDashboard(allCases);
+
+  const notice = first(params.notice);
+  const error = first(params.error);
+  const noticeCaseId = first(params.caseId);
+  const noticeCase = noticeCaseId
+    ? allCases.find((row) => row.case.id === noticeCaseId)
+    : undefined;
+  const bulkNotice = notice === 'reminders_sent' ? bulkReminderNotice(params) : null;
 
   return (
-    <>
-      <AppHeader workspaceName={workspace?.name ?? 'Workspace'} role={session.role} />
-      <main className="mx-auto max-w-4xl px-6 py-12">
-        <div className="flex items-center justify-between">
-          <h1 className="text-headline-small font-medium text-md-on-surface">Cases</h1>
-          <Link href="/cases/new">
-            <Button variant="filled">
-              <MdAdd aria-hidden="true" className="h-4.5 w-4.5" />
-              New case
-            </Button>
-          </Link>
-        </div>
-
-        {cases.length === 0 ? (
-          <Card className="mt-8 flex items-center gap-3">
-            <MdFolderOpen aria-hidden="true" className="h-6 w-6 shrink-0 text-md-on-surface-variant" />
-            <p className="text-body-medium text-md-on-surface-variant">
-              No cases yet. Publish a template, then create a case from it.
+    <CasesDashboard
+      initialView={view}
+      notices={
+        <>
+          {notice === 'reminder_sent' && (
+            <p
+              role="status"
+              className="mt-4 flex items-center gap-2 text-body-small text-md-primary"
+            >
+              <MdSend aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+              Reminder sent{noticeCase ? ` for ${noticeCase.case.name}` : ''}.
             </p>
-          </Card>
-        ) : (
-          <ul className="mt-8 flex flex-col gap-3">
-            {cases.map(({ case: caseRow, templateName, party, status, counts }) => (
-              <li key={caseRow.id}>
-                <Link href={`/cases/${caseRow.id}`}>
-                  <Card className="transition-colors duration-(--duration-effects-fast) hover:bg-md-surface-container-high">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-title-medium text-md-on-surface">{caseRow.name}</p>
-                        <p className="mt-1 text-body-small text-md-on-surface-variant">
-                          {templateName} · {party?.displayName ?? 'No recipient'}
-                        </p>
-                      </div>
-                      <span className="flex items-center gap-1.5 text-label-large text-md-on-surface-variant">
-                        {status === 'complete' && (
-                          <MdCheckCircle aria-hidden="true" className="h-4.5 w-4.5 text-md-primary" />
-                        )}
-                        {status === 'needs_review' && (
-                          <MdRateReview aria-hidden="true" className="h-4.5 w-4.5 text-md-tertiary" />
-                        )}
-                        {summaryLabel(status, counts)}
-                      </span>
-                    </div>
-                  </Card>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </main>
-    </>
+          )}
+          {bulkNotice && (
+            <p
+              role="status"
+              className={`mt-4 flex items-center gap-2 text-body-small ${bulkNotice.failed ? 'text-md-error' : 'text-md-primary'}`}
+            >
+              <MdSend aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+              {bulkNotice.text}
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="mt-4 flex items-center gap-2 text-body-small text-md-error">
+              <MdError aria-hidden="true" className="h-4.5 w-4.5 shrink-0" />
+              {error}
+            </p>
+          )}
+        </>
+      }
+      initialState={parseCaseTableState(params)}
+      rows={sorted.map((row) => toCaseTableRow(row, now))}
+      cards={Object.fromEntries(
+        sorted.map((row) => [row.case.id, <CaseCard key={row.case.id} row={row} now={now} />]),
+      )}
+      now={now}
+      initialHiddenColumns={parseHiddenColumns(
+        cookieStore.get(DASHBOARD_HIDDEN_COLUMNS_COOKIE)?.value,
+      )}
+      empty={
+        <Card className="flex items-center gap-3">
+          <MdFolderOpen
+            aria-hidden="true"
+            className="h-6 w-6 shrink-0 text-md-on-surface-variant"
+          />
+          <p className="text-body-medium text-md-on-surface-variant">
+            No cases yet. Publish a template, then create a case from it.
+          </p>
+        </Card>
+      }
+    />
   );
 }

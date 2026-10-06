@@ -1,15 +1,14 @@
 import Link from 'next/link';
-import { MdChecklist, MdDescription, MdLogout } from 'react-icons/md';
+import { MdLogout } from 'react-icons/md';
 import { Logo } from '@/components/ui/logo';
 import { Button } from '@/components/ui/button';
+import { AppNav } from '@/components/app-nav';
 import { signOutAction } from '@/app/(app)/actions';
 
 /**
- * Shared nav shell for every authenticated (app) page. Kept deliberately
- * plain — a title, three links, sign out — until Stage 9 gives the
- * dashboard enough surface area to justify a real navigation pattern
- * (design-revised.md §42 chooses nav pattern by information architecture
- * and viewport, not preemptively).
+ * Shared nav shell for every authenticated (app) page. Rendered once from
+ * `(app)/layout.tsx` so it persists across navigation between routes
+ * instead of remounting per page (Stage 8.5).
  */
 export function AppHeader({
   workspaceName,
@@ -20,27 +19,12 @@ export function AppHeader({
 }) {
   return (
     <header className="border-b border-md-outline-variant bg-md-surface">
-      <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <div className="flex items-center gap-6">
           <Link href="/dashboard">
-            <Logo className="text-title-large" />
+            <Logo className="text-headline-medium" />
           </Link>
-          <nav className="flex items-center gap-4 text-label-large">
-            <Link
-              href="/dashboard"
-              className="flex items-center gap-1.5 text-md-on-surface-variant hover:text-md-on-surface"
-            >
-              <MdChecklist aria-hidden="true" className="h-4.5 w-4.5" />
-              Cases
-            </Link>
-            <Link
-              href="/templates"
-              className="flex items-center gap-1.5 text-md-on-surface-variant hover:text-md-on-surface"
-            >
-              <MdDescription aria-hidden="true" className="h-4.5 w-4.5" />
-              Templates
-            </Link>
-          </nav>
+          <AppNav />
         </div>
 
         <div className="flex items-center gap-3">

@@ -5,9 +5,18 @@ import { redirect } from 'next/navigation';
 import { getCurrentSession, type CurrentSession } from '@/db/session';
 import { getWorkspaceById } from '@/db/workspace';
 import type { WorkspaceId } from '@/db/scoped';
-import { instantiateCase, issueCaseAccess, recordInviteSent, type IssueAccessMode } from '@/lib/domain/case';
+import { instantiateCase, issueCaseAccess, type IssueAccessMode } from '@/lib/domain/case';
 import { approveSubmission, requestChanges } from '@/lib/domain/review';
 import { sendCaseInvite } from '@/lib/domain/invite';
+import {
+  recordInviteDelivery,
+  ReminderNotAllowedError,
+  ReminderNoteTooLongError,
+  sendManualReminder,
+  sendManualReminders,
+  TooManyRemindersError,
+} from '@/lib/domain/reminder';
+import { caseTableStateToSearchParams, parseCaseTableState } from '@/lib/domain/dashboard-table';
 import { env } from '@/lib/env';
 import { clientIp, userAgent } from '@/lib/request-context';
 import {
@@ -27,6 +36,7 @@ async function sendInviteAndStashLink(
   workspaceId: WorkspaceId,
   userId: string,
   caseId: string,
+  partyId: string,
   recipientEmail: string,
   partyName: string,
   caseName: string,
@@ -42,9 +52,12 @@ async function sendInviteAndStashLink(
     link,
     expiresAt,
   });
-  await recordInviteSent(workspaceId, caseId, userId, {
+  await recordInviteDelivery(workspaceId, caseId, userId, {
+    partyId,
     recipient: recipientEmail,
+    sent: result.sent,
     providerMessageId: result.providerMessageId,
+    error: result.error,
   });
 
   const cookieStore = await cookies();
@@ -73,6 +86,7 @@ export async function createCaseAction(formData: FormData): Promise<void> {
   }
 
   let caseId: string;
+  let partyId: string;
   let token: string;
   let expiresAt: Date;
   try {
@@ -83,6 +97,7 @@ export async function createCaseAction(formData: FormData): Promise<void> {
       party: { partyType, displayName, email, phone, organizationName },
     });
     caseId = result.case.id;
+    partyId = result.party.id;
     token = result.token;
     expiresAt = result.expiresAt;
   } catch (err) {
@@ -96,6 +111,7 @@ export async function createCaseAction(formData: FormData): Promise<void> {
       session.workspaceId,
       session.userId,
       caseId,
+      partyId,
       email,
       displayName,
       name,
@@ -126,6 +142,7 @@ async function reissueAndRedirect(caseId: string, mode: IssueAccessMode): Promis
         session.workspaceId,
         session.userId,
         caseId,
+        issued.party.id,
         issued.party.email,
         issued.party.displayName,
         issued.caseRow.name,
@@ -151,6 +168,98 @@ export async function resendInviteAction(formData: FormData): Promise<void> {
 export async function revokeAndReissueAction(formData: FormData): Promise<void> {
   const caseId = String(formData.get('caseId') ?? '');
   await reissueAndRedirect(caseId, 'reissue');
+}
+
+/**
+ * Stage 8.5: the requester's manual, email-only reminder. Works from
+ * either the case page or the dashboard row shortcut — `returnTo` decides
+ * where the redirect lands, and `returnQuery` round-trips the dashboard's
+ * search and filters so a send doesn't reset them.
+ *
+ * // Stage 11: can() — any workspace member may send a reminder today,
+ * same posture as the review actions above.
+ */
+export async function sendReminderAction(formData: FormData): Promise<void> {
+  const session = await getCurrentSession();
+  if (!session) redirect('/sign-in');
+
+  const caseId = String(formData.get('caseId') ?? '');
+  const note = String(formData.get('note') ?? '');
+  const toDashboard = formData.get('returnTo') === 'dashboard';
+  const dashboardParams = dashboardReturnParams(formData);
+  dashboardParams.set('caseId', caseId);
+
+  let errorMessage: string | null = null;
+  try {
+    const result = await sendManualReminder({
+      workspaceId: session.workspaceId,
+      userId: session.userId,
+      caseId,
+      note,
+    });
+    if (result.status === 'failed') {
+      errorMessage = `The reminder couldn't be sent: ${result.error}. Nothing was recorded as delivered — try again.`;
+    }
+  } catch (err) {
+    if (err instanceof ReminderNotAllowedError || err instanceof ReminderNoteTooLongError) {
+      errorMessage = err.message;
+    } else {
+      errorMessage = err instanceof Error ? err.message : 'Could not send the reminder.';
+    }
+  }
+
+  if (errorMessage) {
+    if (toDashboard) {
+      dashboardParams.set('error', errorMessage);
+      redirect(`/dashboard?${dashboardParams}`);
+    }
+    redirect(`/cases/${caseId}?error=${encodeURIComponent(errorMessage)}`);
+  }
+  if (toDashboard) {
+    dashboardParams.set('notice', 'reminder_sent');
+    redirect(`/dashboard?${dashboardParams}`);
+  }
+  redirect(`/cases/${caseId}?notice=reminder_sent`);
+}
+
+/**
+ * The dashboard state a reminder form came from — search, filters, sort,
+ * and page — rebuilt from validated values only, never echoed back raw
+ * into the redirect.
+ */
+function dashboardReturnParams(formData: FormData): URLSearchParams {
+  const returnQuery = new URLSearchParams(String(formData.get('returnQuery') ?? ''));
+  return caseTableStateToSearchParams(parseCaseTableState(returnQuery));
+}
+
+/** Stage 8.6 bulk "Send reminder" from the dashboard table. Stage 11: can(). */
+export async function sendRemindersAction(formData: FormData): Promise<void> {
+  const session = await getCurrentSession();
+  if (!session) redirect('/sign-in');
+
+  const caseIds = formData.getAll('caseId').map(String).filter(Boolean);
+  const params = dashboardReturnParams(formData);
+
+  try {
+    const result = await sendManualReminders({
+      workspaceId: session.workspaceId,
+      userId: session.userId,
+      caseIds,
+    });
+    params.set('notice', 'reminders_sent');
+    params.set('sent', String(result.sent));
+    params.set('skipped', String(result.skipped));
+    params.set('failed', String(result.failed));
+  } catch (err) {
+    if (err instanceof TooManyRemindersError) {
+      params.set('error', err.message);
+    } else {
+      console.error('sendRemindersAction failed', err);
+      params.set('error', 'Could not send the reminders.');
+    }
+  }
+
+  redirect(`/dashboard?${params}`);
 }
 
 /**

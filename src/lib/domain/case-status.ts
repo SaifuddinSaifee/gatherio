@@ -182,9 +182,23 @@ export function deriveCaseStatus(items: CaseStatusItem[]): CaseStatusResult {
 // I/O
 // ---------------------------------------------------------------------------
 
-type Executor = Database | Tx;
+export type Executor = Database | Tx;
 
-interface StatusInputItem {
+/** deriveCaseStatus over loaded inputs — the one mapping every caller holding `StatusInputItem`s shares. */
+export function caseStatusFromInputs(inputs: readonly StatusInputItem[]): CaseStatusResult {
+  return deriveCaseStatus(
+    inputs.map((i) => ({
+      required: i.required,
+      state: deriveItemState({
+        fulfilmentStatus: i.fulfilmentStatus,
+        latestKind: i.latestKind,
+        latestReviewStatus: i.latestReviewStatus,
+      }),
+    })),
+  );
+}
+
+export interface StatusInputItem {
   caseId: string;
   requirementId: string;
   title: string;
@@ -352,15 +366,7 @@ export async function syncCaseCompletion(
   if (!caseRow) return;
 
   const inputs = await loadCaseStatusInputs(tx, workspaceId, [caseId]);
-  const items = inputs.map((i) => ({
-    required: i.required,
-    state: deriveItemState({
-      fulfilmentStatus: i.fulfilmentStatus,
-      latestKind: i.latestKind,
-      latestReviewStatus: i.latestReviewStatus,
-    }),
-  }));
-  const { status, counts } = deriveCaseStatus(items);
+  const { status, counts } = caseStatusFromInputs(inputs);
 
   const isComplete = status === 'complete';
   const wasComplete = caseRow.completedAt !== null;
@@ -409,20 +415,30 @@ export interface OutstandingForReminder {
 }
 
 /**
- * The recipient's-move items on one case — what Stage 8's reminder job
- * names in copy and snapshots into reminder_dispatch.reason_snapshot. Not
- * an email: Stage 7 ships only this read (decision: no recipient email on
- * request-changes until Stage 8's reminder engine exists).
+ * The recipient's-move items on one case — what the reminder copy names
+ * and snapshots into reminder_dispatch.reason_snapshot (Stage 8.5 manual
+ * sends, Stage 8's scheduler later).
  */
 export async function listOutstandingForReminder(
   workspaceId: WorkspaceId,
   caseId: string,
 ): Promise<OutstandingForReminder[]> {
   const inputs = await loadCaseStatusInputs(scoped(workspaceId).db, workspaceId, [caseId]);
-  inputs.sort((a, b) => a.sequence - b.sequence);
+  return outstandingFromInputs(inputs);
+}
+
+/**
+ * Pure half of `listOutstandingForReminder`, for callers that already
+ * hold loaded status inputs (the dashboard's batched load, the reminder
+ * send's locked transaction) — sorted by requirement sequence.
+ */
+export function outstandingFromInputs(
+  inputs: readonly StatusInputItem[],
+): OutstandingForReminder[] {
+  const sorted = [...inputs].sort((a, b) => a.sequence - b.sequence);
 
   const outstanding: OutstandingForReminder[] = [];
-  for (const item of inputs) {
+  for (const item of sorted) {
     const state = deriveItemState({
       fulfilmentStatus: item.fulfilmentStatus,
       latestKind: item.latestKind,
@@ -442,4 +458,98 @@ export async function listOutstandingForReminder(
   }
 
   return outstanding;
+}
+
+// ---------------------------------------------------------------------------
+// Stage 8.5: manual reminders — pure logic, shared by case.ts's dashboard
+// (blockingItems, reminder eligibility) and reminder.ts's send path.
+// Living here rather than in reminder.ts avoids a case.ts <-> reminder.ts
+// import cycle, since case.ts needs these too.
+// ---------------------------------------------------------------------------
+
+const MAX_REMINDER_NOTE_LENGTH = 500;
+
+export class ReminderNoteTooLongError extends Error {
+  constructor(length: number) {
+    super(`The note is ${length} characters — the limit is ${MAX_REMINDER_NOTE_LENGTH}.`);
+    this.name = 'ReminderNoteTooLongError';
+  }
+}
+
+/** Trims, collapses to null when empty, and normalizes line endings — never silently truncates. */
+export function normalizeReminderNote(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const normalized = raw.replace(/\r\n/g, '\n').trim();
+  if (normalized.length === 0) return null;
+  if (normalized.length > MAX_REMINDER_NOTE_LENGTH) {
+    throw new ReminderNoteTooLongError(normalized.length);
+  }
+  return normalized;
+}
+
+/**
+ * A reminder only ever names what's still blocking the case from the
+ * recipient's side (product.md: "reminded about only what remains") —
+ * required items and anything sent back with changes requested. An
+ * untouched *optional* item is left out; chasing it would undermine trust
+ * that a reminder means something is actually needed. Stage 8's scheduler
+ * reuses this unchanged.
+ */
+export function selectReminderItems(
+  outstanding: readonly OutstandingForReminder[],
+): OutstandingForReminder[] {
+  return outstanding.filter((item) => item.required || item.state === 'changes_requested');
+}
+
+export type ReminderRefusalReason = 'complete' | 'nothing_outstanding' | 'no_email' | 'cooldown';
+
+const REMINDER_REFUSAL_MESSAGE: Record<ReminderRefusalReason, string> = {
+  complete: "This case is complete — there's nothing to remind them about.",
+  nothing_outstanding: 'Nothing is waiting on the recipient right now.',
+  no_email: 'This recipient has no email address on file.',
+  cooldown: 'A reminder was already sent recently for this case.',
+};
+
+export class ReminderNotAllowedError extends Error {
+  constructor(
+    public readonly reason: ReminderRefusalReason,
+    public readonly availableAt?: Date,
+  ) {
+    super(REMINDER_REFUSAL_MESSAGE[reason]);
+    this.name = 'ReminderNotAllowedError';
+  }
+}
+
+export type ReminderEligibility =
+  | { ok: true }
+  | { ok: false; reason: ReminderRefusalReason; availableAt?: Date };
+
+export interface ReminderEligibilityInput {
+  caseStatus: CaseStatusResult['status'];
+  reminderItemCount: number;
+  recipientEmail: string | null;
+  /** The latest queued/sent reminder attempt on this case, or null if none. */
+  lastReminderAt: Date | null;
+  now: Date;
+  cooldownMs: number;
+}
+
+/**
+ * The one rule both the server refusal and the UI's disabled-state
+ * message read — so they can't disagree (Stage 8.5 design decision 9).
+ * Order matters: a complete case is refused as "complete" even if it
+ * somehow has zero reminder items for another reason, and "no email" is
+ * checked before the cooldown, since fixing the cooldown wouldn't help.
+ */
+export function reminderEligibility(input: ReminderEligibilityInput): ReminderEligibility {
+  if (input.caseStatus === 'complete') return { ok: false, reason: 'complete' };
+  if (input.reminderItemCount === 0) return { ok: false, reason: 'nothing_outstanding' };
+  if (!input.recipientEmail) return { ok: false, reason: 'no_email' };
+  if (input.lastReminderAt) {
+    const availableAt = new Date(input.lastReminderAt.getTime() + input.cooldownMs);
+    if (availableAt.getTime() > input.now.getTime()) {
+      return { ok: false, reason: 'cooldown', availableAt };
+    }
+  }
+  return { ok: true };
 }

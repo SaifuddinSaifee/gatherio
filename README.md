@@ -12,19 +12,28 @@ Working domain: `gather.io`. Product name: **Gather**.
 ## Project status
 
 This is a solo, pre-revenue build going stage-by-stage through a fixed
-plan. **Stages 1–5 are built and verified. Stages 6–10 are not started.**
-Concretely, today you can:
+plan. **Stages 1–7, 8.5 and 8.6 are built and verified.** Stage 8
+(automated reminders), Stage 9 (export) and Stage 11 (roles and access
+control) are not started. Concretely, today you can:
 
 - sign up, which creates your own workspace
-- create a versioned template with upload/answer/acknowledge requirements
-- publish it and instantiate a case from it, which prints a one-time
-  recipient link
-- see the case and its requirements on a real, data-backed dashboard
+- create a versioned template with upload/answer/acknowledge requirements,
+  publish it, and instantiate a case from it
+- send the recipient an invite email with a one-time magic link; the
+  recipient opens it with no account, uploads files, answers questions and
+  acknowledges items (files are held until malware-scan status allows download)
+- review each submission: approve, request changes with a required reason,
+  or reopen; every item keeps its version history
+- see all your cases on a dashboard, as a sortable/filterable data table
+  (the default) or a grouped list, showing who is blocking each case and on
+  which items
+- send a manual email reminder (one case, or in bulk from the table) that
+  names only what is still missing, with an optional note and a cooldown
 
-You **cannot yet**: open the recipient link and actually submit anything
-(the `/r/[token]` page is a stub — see [src/app/r/\[token\]/page.tsx](src/app/r/%5Btoken%5D/page.tsx)),
-review or reject a submission, receive a reminder, or export a completed
-packet. Those are Stages 6–9.
+You **cannot yet**: receive automated, scheduled reminders (Stage 8),
+export a completed case as a packet (Stage 9), or invite teammates and
+restrict who can see a case (Stage 11 — today every workspace member can
+see and review everything). Postmark and ClamAV are interface stubs.
 
 For the authoritative, continuously-updated record of exactly what's built
 and verified vs. not — down to the individual bug fixes and design
@@ -61,7 +70,7 @@ local implementation — no cloud account or API key is needed to run this.
 git clone <this-repo> && cd gatherio
 cp .env.example .env.local   # read by `next dev`
 cp .env.example .env         # read by drizzle-kit and the worker
-docker compose up -d         # Postgres on :5433, Mailpit on :8025
+docker compose up -d         # Postgres on :5434, Mailpit on :8025
 pnpm install
 pnpm db:migrate
 pnpm db:seed                 # creates demo workspace/template/case data
@@ -72,7 +81,7 @@ pnpm dev                     # http://localhost:3000
 `drizzle-kit` and the worker process only read `.env`. Both need the same
 values, so copy the example to both rather than symlinking or picking one.
 
-**Postgres is on port `5433`, not `5432`,** specifically so it doesn't
+**Postgres is on port `5434`, not `5432`,** specifically so it doesn't
 collide with a Homebrew/system Postgres you might already have running.
 
 **What `pnpm db:seed` actually gives you:** a demo workspace ("Demo
@@ -84,8 +93,8 @@ shown in the seed output isn't a working login. To actually use the app as
 a requester, go to `/sign-up` and create your own account; that's the real
 path Stage 4 built and verified.
 
-Run the background worker (reminders, scans, exports — not wired to
-anything meaningful yet, since those are Stage 8/9) in a second terminal:
+Run the background worker (no jobs are registered yet — automated reminders
+and exports are Stage 8/9) in a second terminal:
 
 ```bash
 pnpm worker
@@ -109,8 +118,12 @@ lands instead of a real inbox.
    counterparty's details, and create the case. You'll get a one-time
    recipient link (`/r/<token>`) — this is what would normally go to the
    external party.
-5. Open that link: it renders a stub page, not a real form — this is the
-   honest current boundary of what's built (Stage 6 hasn't started).
+5. Open that link (or the invite email in Mailpit at
+   http://localhost:8025): this is the recipient's no-account page. Upload a
+   file or answer a question, then go back to the case as the requester to
+   approve it or request changes.
+6. Open **Dashboard** to see the case in the table/list views and try
+   **Send reminder**; the email lands in Mailpit.
 
 ## Everyday commands
 
@@ -135,7 +148,8 @@ lands instead of a real inbox.
 src/
   app/(app)/…       requester-side pages — dashboard, templates, cases. Authenticated.
   app/(auth)/…       sign-up / sign-in
-  app/r/[token]/…    recipient page — no account, server-rendered (stub today, Stage 6)
+  app/r/…            recipient side — no account: [token] exchanges the magic link for a
+                      session, c/[caseId] is the submission page
   app/api/…          upload/download routes, Better Auth's own route handler
   db/schema/         one file per entity group (workspace, template, case, requirement,
                       submission, reminder, access, audit, signature, auth)
@@ -146,10 +160,12 @@ src/
   lib/adapters/       storage (local filesystem / R2), notify (local console / SMTP /
                       Postmark), malware scan (noop / ClamAV), e-sign (interface only)
   lib/domain/         business logic that sits on top of scoped() — template
-                      versioning/immutability, case instantiation, etc.
-  worker/jobs/        background jobs (reminders, scans, exports) — not yet populated
+                      versioning/immutability, case instantiation, review,
+                      case-status derivation, reminders, dashboard filtering
+  worker/             background worker entrypoint — no jobs registered yet (Stage 8/9)
   components/ui/      Material You primitives (Button, Card, TextField, Select,
-                      SegmentedButtons, Switch) built against design-revised.md
+                      SegmentedButtons, Switch, Checkbox, Popover, …) and the
+                      reusable data-table/ kit, built against design-revised.md
 ```
 
 ## Configuration
@@ -161,7 +177,7 @@ don't guess at values. The adapters that matter:
 | --- | --- | --- |
 | `STORAGE_DRIVER` | `local` \| `r2` | `local` writes to `.storage/` on disk via signed tokens. `r2` talks to Cloudflare R2 through the S3-compatible API (`region: "auto"`) — needs `R2_*` vars filled in. |
 | `NOTIFY_DRIVER` | `local` \| `smtp` \| `postmark` | `local` and `smtp` both point at Mailpit by default. `postmark` is an interface stub only — not implemented yet (Phase 1b). |
-| `SCAN_DRIVER` | `noop` \| `clamav` | `noop` marks every upload clean immediately. `clamav` isn't implemented yet — files stay `quarantined` until a real scan lands (Stage 6/9 dependency). |
+| `SCAN_DRIVER` | `noop` \| `clamav` | `noop` marks every upload clean immediately. `clamav` isn't implemented yet — files stay `quarantined` until a real scan lands; needed before any real client file. |
 
 `AUTH_SECRET` signs recipient sessions and local upload tokens — the
 `.env.example` default is fine for local dev, generate a real one
@@ -186,7 +202,7 @@ requirements.
 ## Where this is going
 
 The full stage-by-stage plan (schema, every remaining stage through
-reminders/review/export, and the roadmap seams for signing, banking
+automated reminders/export/roles, and the roadmap seams for signing, banking
 details, Aadhaar, AI extraction, and payments that the schema already
 anticipates without building) is in [plans/plan-1a.md](plans/plan-1a.md).
 [CHECKLIST.md](CHECKLIST.md) is updated every time something in that plan

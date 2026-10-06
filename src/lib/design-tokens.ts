@@ -1,0 +1,81 @@
+/**
+ * Class-name suffixes for every design token declared in `@theme` in
+ * src/app/globals.css, grouped by Tailwind namespace (`--text-label-small`
+ * → `text-label-small` → `'label-small'` under `text`).
+ *
+ * The values live only in globals.css. This list exists so `cn()` can tell
+ * `text-label-small` (a size) from `text-md-primary` (a color) — without it,
+ * tailwind-merge treats unknown `text-*` classes as colors and silently
+ * drops the size when both appear together. design-tokens.test.ts fails if
+ * this list and globals.css drift apart.
+ */
+export const DESIGN_TOKENS = {
+  color: [
+    'md-primary',
+    'md-on-primary',
+    'md-primary-container',
+    'md-on-primary-container',
+    'md-inverse-primary',
+    'md-secondary',
+    'md-on-secondary',
+    'md-secondary-container',
+    'md-on-secondary-container',
+    'md-tertiary',
+    'md-on-tertiary',
+    'md-tertiary-container',
+    'md-on-tertiary-container',
+    'md-error',
+    'md-on-error',
+    'md-error-container',
+    'md-on-error-container',
+    'md-surface',
+    'md-on-surface',
+    'md-surface-dim',
+    'md-surface-bright',
+    'md-surface-container-lowest',
+    'md-surface-container-low',
+    'md-surface-container',
+    'md-surface-container-high',
+    'md-surface-container-highest',
+    'md-on-surface-variant',
+    'md-inverse-surface',
+    'md-inverse-on-surface',
+    'md-outline',
+    'md-outline-variant',
+    'md-scrim',
+    'md-shadow',
+  ],
+  text: [
+    'display-large',
+    'display-medium',
+    'display-small',
+    'headline-large',
+    'headline-medium',
+    'headline-small',
+    'title-large',
+    'title-medium',
+    'title-small',
+    'body-large',
+    'body-medium',
+    'body-small',
+    'label-large',
+    'label-medium',
+    'label-small',
+    'button',
+    'button-sm',
+    'table-header',
+    'table-cell',
+    'table-cell-meta',
+    'badge',
+  ],
+  radius: ['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl'],
+  shadow: [
+    'elevation-0',
+    'elevation-1',
+    'elevation-2',
+    'elevation-3',
+    'elevation-4',
+    'elevation-5',
+  ],
+  ease: ['md-standard'],
+} as const;

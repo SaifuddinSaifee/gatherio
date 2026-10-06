@@ -123,6 +123,25 @@
   --text-label-small: 0.6875rem; /* 11px */
   --text-label-small--line-height: 1rem; /* 16px */
 
+  /* ---- Typography: component roles -----------------------------------
+   * Where several components must stay the same size, they use a role
+   * instead of a scale step directly. Point a role at a different scale
+   * step here to resize every use at once — never set a one-off
+   * text-[Npx] in a component. Every name in this @theme must also be
+   * listed in src/lib/design-tokens.ts (a test enforces it). */
+  --text-button: var(--text-label-large); /* Button / SegmentedButtons, default size */
+  --text-button--line-height: var(--text-label-large--line-height);
+  --text-button-sm: var(--text-label-medium); /* Button / SegmentedButtons, size="sm" */
+  --text-button-sm--line-height: var(--text-label-medium--line-height);
+  --text-table-header: var(--text-label-medium); /* DataTable column headings */
+  --text-table-header--line-height: var(--text-label-medium--line-height);
+  --text-table-cell: var(--text-body-medium); /* DataTable cell content */
+  --text-table-cell--line-height: var(--text-body-medium--line-height);
+  --text-table-cell-meta: var(--text-body-small); /* secondary line under a cell's primary value */
+  --text-table-cell-meta--line-height: var(--text-body-small--line-height);
+  --text-badge: var(--text-label-large); /* status badges */
+  --text-badge--line-height: var(--text-label-large--line-height);
+
   /* ---- Logo wordmark font (Saira Extra Condensed) --------------------
    * Loaded per-component via next/font/google, not globally — this
    * placeholder documents the family name for reference only; do not
@@ -150,16 +169,11 @@
    * color is neutral black at low opacity per M3 spec — it does not vary
    * by theme the way surface/primary do. */
   --shadow-elevation-0: none;
-  --shadow-elevation-1:
-    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
-  --shadow-elevation-2:
-    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
-  --shadow-elevation-3:
-    0px 1px 3px 0px rgba(0, 0, 0, 0.3), 0px 4px 8px 3px rgba(0, 0, 0, 0.15);
-  --shadow-elevation-4:
-    0px 2px 3px 0px rgba(0, 0, 0, 0.3), 0px 6px 10px 4px rgba(0, 0, 0, 0.15);
-  --shadow-elevation-5:
-    0px 4px 4px 0px rgba(0, 0, 0, 0.3), 0px 8px 12px 6px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-1: 0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-2: 0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-3: 0px 1px 3px 0px rgba(0, 0, 0, 0.3), 0px 4px 8px 3px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-4: 0px 2px 3px 0px rgba(0, 0, 0, 0.3), 0px 6px 10px 4px rgba(0, 0, 0, 0.15);
+  --shadow-elevation-5: 0px 4px 4px 0px rgba(0, 0, 0, 0.3), 0px 8px 12px 6px rgba(0, 0, 0, 0.15);
 
   /* ---- Motion: spatial vs. effects (design-revised.md §22-23) ----------
    * Two families with different timing, not one universal
@@ -201,6 +215,11 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Always reserve the scrollbar's width, so centered content doesn't shift sideways between short and long pages. */
+html {
+  scrollbar-gutter: stable;
 }
 
 body {

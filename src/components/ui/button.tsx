@@ -1,10 +1,14 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from 'react';
+import Link from 'next/link';
 import { cn } from '@/lib/cn';
 
 type ButtonVariant = 'filled' | 'tonal' | 'outlined' | 'text';
+type ButtonSize = 'sm' | 'md';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
+  /** 'md' (default) is the standard Material button. 'sm' is for dense contexts — a table toolbar, a row's inline actions. */
+  size?: ButtonSize;
   fullWidth?: boolean;
 }
 
@@ -44,31 +48,78 @@ const VARIANT_STYLES: Record<
   },
 };
 
+const SIZE_STYLES: Record<ButtonSize, string> = {
+  md: 'h-10 gap-2 px-6 text-button',
+  sm: 'h-8 gap-1.5 px-4 text-button-sm',
+};
+
+function buttonClassName(
+  variant: ButtonVariant,
+  size: ButtonSize,
+  fullWidth: boolean | undefined,
+  className: string | undefined,
+) {
+  const styles = VARIANT_STYLES[variant];
+  return cn(
+    'group relative inline-flex cursor-pointer items-center justify-center rounded-full font-medium transition-shadow duration-(--duration-effects-default) ease-md-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-md-on-surface/12 disabled:text-md-on-surface/38 disabled:shadow-elevation-0',
+    SIZE_STYLES[size],
+    fullWidth && 'w-full',
+    styles.container,
+    styles.elevation,
+    className,
+  );
+}
+
+function ButtonContent({ variant, children }: { variant: ButtonVariant; children: ReactNode }) {
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-(--duration-effects-fast) group-hover:opacity-(--opacity-state-hover) group-active:opacity-(--opacity-state-pressed) ${VARIANT_STYLES[variant].stateLayer}`}
+      />
+      <span className="relative z-10 inline-flex items-center gap-2">{children}</span>
+    </>
+  );
+}
+
 export function Button({
   variant = 'filled',
+  size = 'md',
   fullWidth,
   className,
   children,
   ...props
 }: ButtonProps) {
-  const styles = VARIANT_STYLES[variant];
-
   return (
-    <button
-      className={cn(
-        'group relative inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-full px-6 text-label-large font-medium transition-shadow duration-(--duration-effects-default) ease-md-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-md-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-md-on-surface/12 disabled:text-md-on-surface/38 disabled:shadow-elevation-0',
-        fullWidth && 'w-full',
-        styles.container,
-        styles.elevation,
-        className,
-      )}
-      {...props}
-    >
-      <span
-        aria-hidden="true"
-        className={`pointer-events-none absolute inset-0 rounded-[inherit] opacity-0 transition-opacity duration-(--duration-effects-fast) group-hover:opacity-(--opacity-state-hover) group-active:opacity-(--opacity-state-pressed) ${styles.stateLayer}`}
-      />
-      <span className="relative z-10 inline-flex items-center gap-2">{children}</span>
+    <button className={buttonClassName(variant, size, fullWidth, className)} {...props}>
+      <ButtonContent variant={variant}>{children}</ButtonContent>
     </button>
+  );
+}
+
+type ButtonLinkProps<RouteType> = Omit<
+  ComponentProps<typeof Link<RouteType>>,
+  'className' | 'children'
+> & {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  fullWidth?: boolean;
+  className?: string;
+  children: ReactNode;
+};
+
+/** A navigation that looks like a button — a real link, never a `<button>` nested inside an `<a>`. */
+export function ButtonLink<RouteType>({
+  variant = 'filled',
+  size = 'md',
+  fullWidth,
+  className,
+  children,
+  ...props
+}: ButtonLinkProps<RouteType>) {
+  return (
+    <Link className={buttonClassName(variant, size, fullWidth, className)} {...props}>
+      <ButtonContent variant={variant}>{children}</ButtonContent>
+    </Link>
   );
 }

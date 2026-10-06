@@ -1,6 +1,6 @@
 # **What is Gather.io?**
 
-**Working name:** Gather.io (brand and domain decision deliberately open) **Owner:** Saifuddin Saifee **Status:** In build. The core collection loop (templates → cases → recipient submission → review and rework) is built and verified; reminders, dashboard/export, and roles are not (build status lives in [CHECKLIST.md](CHECKLIST.md)). Informal problem conversations held (a banker and a few others); no structured discovery interviews or paid pilots yet. **Version:** 1.1 **Date:** September 2026
+**Working name:** Gather.io (brand and domain decision deliberately open) **Owner:** Saifuddin Saifee **Status:** In build. The core collection loop (templates → cases → recipient submission → review and rework) is built and verified, as are the requester dashboard (table and list views, showing what is blocking each case) and manual email reminders (Stages 8.5–8.6). Automated reminders, packet export, and roles are not. Build status lives in [CHECKLIST.md](CHECKLIST.md). Informal problem conversations held (a banker and a few others); no structured discovery interviews or paid pilots yet. **Version:** 1.1 **Date:** September 2026
 
 Gather.io is **external request completion software**.
 
@@ -70,7 +70,7 @@ These are decisions made while building that the rest of this document did not p
 
 ### What it does not yet do
 
-No automated reminders; no requester dashboard showing what is blocking each case; no packet export; single party per case only; one user per workspace with an owner/member split instead of the five-role ladder; no step-up authentication beyond the link itself; malware scanning and production email delivery are interfaces with development stand-ins. Multi-party cases, carry-forward, and expiry — the three structural differentiators argued for above — exist as schema seams, with no product behaviour yet.
+No automated (scheduled) reminders — only a manual, email-only "Send reminder"; no packet export; single party per case only; one user per workspace with an owner/member split instead of the five-role ladder; no step-up authentication beyond the link itself; malware scanning and production email delivery are interfaces with development stand-ins. Multi-party cases, carry-forward, and expiry — the three structural differentiators argued for above — exist as schema seams, with no product behaviour yet.
 
 ---
 
@@ -474,7 +474,7 @@ The concrete surface the requester looks at, split into two sections so "what ha
 
 ### On-demand messaging — "Send now"
 
-The Notifications tab is not only a read-only history. It carries one more card: a single message the requester composes and dispatches immediately, outside the automatic cadence — the manual-chase equivalent of "I'm just going to ping them right now." It is explicitly **not** a chat: there is no reply channel back into Gather. If the recipient hits reply on the email, or replies on WhatsApp, that reply lands in the requester's own inbox or phone exactly as it would today, never inside the product. This keeps faith with §3.1's recipient thesis — the recipient still never needs an account or a place to log back into, even for this.
+The Notifications tab is not only a read-only history. It carries one more card: a single message the requester composes and dispatches immediately, outside the automatic cadence — the manual-chase equivalent of "I'm just going to ping them right now." A deliberately narrower, email-only version ships first, in Stage 8.5 — see "Sequencing" below. It is explicitly **not** a chat: there is no reply channel back into Gather. If the recipient hits reply on the email, or replies on WhatsApp, that reply lands in the requester's own inbox or phone exactly as it would today, never inside the product. This keeps faith with §3.1's recipient thesis — the recipient still never needs an account or a place to log back into, even for this.
 
 **The channel constraint this runs into, and why it isn't optional:**
 
@@ -528,6 +528,7 @@ Authoring UX: typing `@` or `#` opens an autocomplete list — the standard ment
 This is schema-touching, so where it lands matters:
 
 * **Recipient reminders** (the existing `ReminderPolicy` engine) stay exactly where §10 already puts them — Phase 1a, since the unopened/stalled distinction is load-bearing for the core thesis.
+* **A pre-pilot manual reminder (Stage 8.5)** ships ahead of the automated cadence engine, alongside the requester dashboard. It is email only and is one "Send reminder" button, not a composer. Gather writes the copy: it names only the items still outstanding, puts any changes-requested reason under its item, and includes a fresh link, since only token hashes are stored. It has unopened and stalled variants. The requester can add an optional plain-text note, shown as a clearly separated block. A server-side cooldown stops accidental double sends. This is what lets a validated concierge pilot move onto the product without waiting for the scheduler. It also introduces `reminder_dispatch.trigger_type` early (manual rows sit outside the scheduled idempotency sequence, as described above). It is **not** the Phase 1b "Send now" composer: no freeform body, no `MessageTemplate`, no `@`/`#` mentions, and no channel branching. The full composer still arrives in Phase 1b and replaces the button.
 * **Requester notification center** (in-app feed, Notifications tab, email channel, `NotificationPreference`) belongs in **Phase 1b** — "before charging beyond pilots" is exactly when a requester running a real case stops tolerating a dashboard they have to remember to check.
 * **On-demand "Send now," `MessageTemplate`, per-event message overrides, and the `@`/`#` mention system** all belong in **Phase 1b** alongside the notification center — same surface (the Notifications tab), same underlying entities, no new infrastructure beyond the `Notify` adapter already planned.
 * **WhatsApp and SMS template approval is an operational dependency, not a build task.** Meta's WhatsApp template review and India's DLT SMS registration both take real calendar time and happen outside this codebase entirely. Start that process before Phase 1b needs it, not when it's already blocking a release — email needs none of this and can ship first regardless.
@@ -902,10 +903,10 @@ The market validation report's Phase 1 contains roughly seventeen items. That is
 * Single-party assignment  
 * Magic-link recipient access  
 * Mobile-first recipient page, resumable  
-* Reminders for missing items only, with the unopened versus stalled distinction  
+* Reminders for missing items only, with the unopened versus stalled distinction *(a manual email reminder comes first, in Stage 8.5; the automated cadence follows in Stage 8)*  
 * Review: approve or request changes, with the reason feeding the next reminder  
 * Versioned resubmission  
-* Requester dashboard showing what is blocking each case  
+* Requester dashboard showing what is blocking each case *(built first, with a manual email reminder, as Stage 8.5, ahead of automated reminders)*  
 * Complete-packet ZIP export
 
 **Phase 1b, before charging beyond pilots:**

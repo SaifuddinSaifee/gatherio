@@ -1888,6 +1888,135 @@ Use text fields instead where users need exact numeric entry.
 
 ---
 
+# 55A. Data Tables
+
+Current Material 3 guidance has no data table spec (Material 2's was retired). Gather's tables follow the M3 foundations in this document (surfaces, state layers, type scale, shape, and accessibility), and borrow their *interaction pattern* from the widely understood shadcn/TanStack data table: toolbar, faceted filters, sortable headers, a column toggle, row selection with bulk actions, and pagination.
+
+Implemented once, in `src/components/ui/data-table/`. A new table is a column list plus a `useDataTable` call, never a new copy of the markup.
+
+## When to use a table
+
+Use a data table when the user needs to **scan, compare, filter, or act on many records at once**: finding the overdue cases, sorting by due date, sending reminders to twenty clients.
+
+Use a list of cards (§34, §48) when each record is **worked through one at a time** and needs room for its own actions and context. The dashboard offers both views of the same cases for exactly this reason.
+
+Do not use a table for fewer than a handful of rows, or for content that is mostly prose.
+
+## Anatomy
+
+```text
+Toolbar          search · filter chips · "Clear filters" · Columns (end-aligned)
+Selection bar    "n selected" · bulk actions · "Clear selection"   (only while rows are selected)
+Table            header row · body rows · empty state
+Footer           "Showing a–b of n" · rows per page · page x of y · first/prev/next/last
+```
+
+## Surfaces and shape
+
+- Container: `surface`, 1px `outline-variant` border, Medium (12px) corners (§16), no elevation. A table is not a raised card.
+- Header row: `surface-container-low`, 48px tall, `label-large` in `on-surface-variant`.
+- Body rows: `outline-variant` dividers between rows (§49), no zebra striping.
+- Row hover: `surface-container-low`. Selected row: `surface-container-high`. These are surface-role changes, never a translucent brand color over the row (§9).
+
+## Density and typography
+
+- Cells: 16px horizontal and 12px vertical padding; `body-medium` primary text.
+- Secondary line in a cell (template under case name, email under recipient): `body-small`, `on-surface-variant`.
+- Numbers use `tabular-nums` and align to the end of the cell.
+- Short values (`whitespace-nowrap`) never wrap. Long values wrap within a sensible `min-width`, or clamp to one line with the full text in `title`.
+- **Default to few columns.** Combine related facts in one cell (a status badge with its progress beneath it; last recipient activity with the last email sent) before adding a column. Ship less important columns hidden and let the user show them. Test at 1280px: row actions must be visible without horizontal scrolling.
+
+## Status in cells
+
+- Status is a compact label with a leading icon and a tonal container (e.g. `tertiary-container` for "Needs review", `primary-container` for "Complete"). The text carries the meaning, the icon reinforces it, and color is never the only signal (§72).
+- It is a label, not a chip: it isn't interactive (§41, §53).
+- Errors in a cell (overdue, email failed) use `error` text **with** an icon and a word ("Overdue", "Email failed").
+
+## Sorting
+
+- A sortable header is a button inside the `<th>`. Its accessible name is just the column label; the `<th>` carries `aria-sort` (`ascending` / `descending` / `none`).
+- The direction icon (arrow up/down) is always visible on the sorted column. On unsorted columns it appears on hover and focus only, to keep the header quiet.
+- Clicking cycles ascending → descending → unsorted. **Unsorted means the product's default priority order** (e.g. "needs your review" first), not an arbitrary database order.
+- Empty values sort last in both directions.
+
+## Filtering
+
+- Search: a compact pill field (`surface-container-high`, 40px, leading search icon, clear button when non-empty) (§50). Its placeholder names what is searched.
+- Faceted filters are **filter chips with a dropdown arrow** (§41), opening a popover of checkboxes with a count per option. The chip shows a checkmark and the selection ("Status · Complete", "Status · 2 selected") when active.
+- Options within one facet are OR'd; different facets and the search are AND'd. Each facet's counts respect every *other* active filter.
+- Name facet triggers "Filter by …" for assistive technology, so they never share an accessible name with a column's sort button.
+- Show "Clear filters" whenever any filter is active, and again inside the empty state.
+- Filter, sort, and page state live in the URL, so a filtered view survives reload and can be shared.
+
+## Column visibility
+
+- A "Columns" outlined chip-sized button, aligned to the end of the toolbar, opens a checkbox list labeled "Show columns".
+- The primary identifying column (e.g. Case) and the selection and action columns can't be hidden.
+- The user's choice persists per browser, and is read by the server so the first render is already correct (no flash of default columns).
+
+## Selection and bulk actions
+
+- A leading checkbox column (§40). The header checkbox selects **the current page** and shows the indeterminate state when some rows are selected.
+- Each row checkbox is labeled with the record ("Select Q3 Close: Acme"), never just "Select row".
+- While anything is selected, a selection bar (`secondary-container`) appears above the table with the count (`role="status"`), the bulk actions, and "Clear selection".
+- Bulk actions state what they will actually do. If some selected rows aren't eligible, the button counts only the eligible ones ("Send reminder to 3") and a line explains why the rest are excluded. Never silently skip rows.
+- Clear the selection after a bulk action completes.
+
+## Row actions
+
+- Row actions sit in a trailing column whose header is visually hidden ("Actions").
+- Use compact text or tonal buttons (32px tall) with visible labels ("Review", "Remind"). Each has an accessible name that includes the record ("Send reminder for Q3 Close: Acme").
+- The record's name is also a link to its detail page. Don't make the whole row clickable when it also contains checkboxes and buttons.
+
+## Pagination
+
+- Footer text in `body-small`: "Showing 21–40 of 57 cases".
+- Rows per page: a compact native select (10 / 20 / 50).
+- First / previous / next / last as standard icon buttons (§32) with accessible names, disabled at the ends.
+- The range line is a polite live region, so filtering announces the new count.
+
+## Empty and loading states
+
+- No records at all: don't render a table. Show the page's empty-state card explaining how to create the first record.
+- Filters match nothing: keep the toolbar and headers, and put a single full-width cell in the body with "No cases match these filters." and a "Clear filters" action.
+
+## Popovers (filter and column menus)
+
+- `surface-container`, level-2 elevation (§20), Extra-small (4px) corners (§45), 8px vertical padding.
+- Rows are 40px, with the checkbox's own state layer plus a `surface-container-high` hover on the whole row.
+- Opening moves focus to the first control. Escape closes and returns focus to the trigger. An outside click closes.
+- These are disclosure panels of ordinary checkboxes, not ARIA `menu`s: they keep native checkbox semantics and Tab order.
+
+## Responsive behavior
+
+- The toolbar wraps. Search takes the full width on compact screens, with the filter chips on the next line.
+- The table scrolls horizontally **inside its own container**. The page body must never scroll horizontally.
+- Give the scroll container `position: relative`. Otherwise an absolutely positioned descendant (such as a visually hidden header label) is positioned against the page and widens it.
+- The footer wraps into two lines on compact screens.
+- On compact screens, prefer offering the card list view over squeezing more columns in.
+
+## Accessibility checklist
+
+- A real `<table>` with a (visually hidden) `<caption>` naming it.
+- `<th scope="col">` for every header; `aria-sort` on sortable ones.
+- Selection is conveyed by labeled checkboxes. `aria-selected` is only valid in ARIA grids, which a read-and-act table is not.
+- Every icon-only control has an accessible name; every icon next to text is `aria-hidden`.
+- The selection count and pagination range are announced.
+- Keyboard: everything is reachable by Tab; sort buttons, checkboxes, and actions work with Enter and Space; popovers close with Escape.
+
+## Anti-patterns
+
+- A translucent primary color over selected rows (use surface roles).
+- Zebra striping *and* row dividers together.
+- Ten columns by default with the actions scrolled off-screen.
+- Status conveyed by color alone.
+- A bulk action that silently skips ineligible rows.
+- Filter state held only in component memory, lost on reload.
+- Making the whole row a link while it also contains checkboxes and buttons.
+- Rebuilding sorting, pagination, or selection per page instead of using the shared data table.
+
+---
+
 # 56. Component Inventory
 
 When performing a comprehensive Material migration, audit at least these families:
@@ -1915,6 +2044,8 @@ Containment
 - dialogs
 - sheets
 - lists
+- data tables (§55A)
+- popovers / menus
 - dividers
 - carousels
 
@@ -2875,6 +3006,7 @@ Do not confuse these brand decisions with requirements imposed by Material Desig
 - [ ] Filled/elevated/outlined cards as needed
 - [ ] Selection controls use correct semantics
 - [ ] Navigation adapts to viewport/context
+- [ ] Data tables use the shared `components/ui/data-table` parts, fit their default columns at 1280px, and scroll horizontally only inside their own container (§55A)
 
 ## Interaction
 
