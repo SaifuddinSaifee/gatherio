@@ -12,8 +12,11 @@ import type { WorkspaceId } from './scoped';
  * caller of withAudit — nothing had exercised this signature before).
  * Deriving it this way means a future drizzle-orm version can't silently
  * reintroduce the same mismatch.
+ *
+ * Exported (Stage 7) so every domain module shares one definition instead
+ * of redeclaring it locally — `submission.ts` used to have its own copy.
  */
-type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
+export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 export interface AuditEventInput {
   workspaceId: WorkspaceId;

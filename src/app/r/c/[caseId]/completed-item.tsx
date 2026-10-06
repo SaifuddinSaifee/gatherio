@@ -1,24 +1,6 @@
 import { MdCheckCircle, MdDescription, MdErrorOutline } from 'react-icons/md';
 import type { RecipientRequirementItem } from '@/lib/domain/recipient-view';
-import type { StoredAnswer } from '@/lib/domain/answer';
-
-function formatAnswerValue(answer: StoredAnswer): string {
-  switch (answer.fieldType) {
-    case 'short_text':
-    case 'long_text':
-      return answer.text;
-    case 'date':
-      return answer.date;
-    case 'choice':
-      return answer.choice;
-    case 'yes_no':
-      return answer.yes ? 'Yes' : 'No';
-    case 'acknowledge':
-      return 'Acknowledged';
-    case 'not_applicable':
-      return "Marked as not applicable";
-  }
-}
+import { formatAnswerValue } from '@/lib/answer-format';
 
 /**
  * One completed requirement's summary row, rendered inside the native
@@ -74,6 +56,18 @@ export function CompletedItem({
         <p className="mt-2 flex items-start gap-2 rounded-sm bg-md-error-container px-3 py-2 text-body-small text-md-on-error-container">
           <MdErrorOutline aria-hidden="true" className="mt-0.5 h-4.5 w-4.5 shrink-0" />
           {latestReview.reason}
+        </p>
+      )}
+      {/*
+        Stage 7: nothing else writes a review row here — an
+        acknowledgement is auto-accepted (decision 7) and a fresh
+        upload/answer/not-applicable declaration is simply awaiting the
+        requester's decision (§4.4's "whether it was accepted" needs an
+        honest "not yet" state, not silence).
+      */}
+      {!latestReview && (
+        <p className="mt-2 text-body-small text-md-on-surface-variant">
+          {latestSubmission?.answer?.fieldType === 'acknowledge' ? 'Received' : 'Received — awaiting review'}
         </p>
       )}
     </div>

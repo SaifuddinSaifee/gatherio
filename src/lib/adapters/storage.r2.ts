@@ -3,7 +3,13 @@ import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { env } from '@/lib/env';
-import type { CompletedObject, PresignDownloadResult, PresignUploadResult, StorageAdapter } from './storage';
+import {
+  contentDispositionHeader,
+  type CompletedObject,
+  type PresignDownloadResult,
+  type PresignUploadResult,
+  type StorageAdapter,
+} from './storage';
 
 /**
  * Cloudflare R2, S3-compatible. Per the plan's residency note: R2 has no
@@ -53,9 +59,13 @@ export function r2StorageAdapter(): StorageAdapter {
       return result;
     },
 
-    async presignDownload({ key, expiresInSeconds = 300 }) {
+    async presignDownload({ key, filename, expiresInSeconds = 300 }) {
       const s3 = client();
-      const command = new GetObjectCommand({ Bucket: bucket(), Key: key });
+      const command = new GetObjectCommand({
+        Bucket: bucket(),
+        Key: key,
+        ResponseContentDisposition: contentDispositionHeader(filename),
+      });
       const url = await getSignedUrl(s3, command, { expiresIn: expiresInSeconds });
       const result: PresignDownloadResult = {
         url,

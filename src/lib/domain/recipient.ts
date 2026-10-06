@@ -20,10 +20,12 @@ export interface RecipientItemLike {
 /**
  * Outstanding = a fulfilment status that still needs recipient action, OR
  * (regardless of fulfilment status) the latest review came back
- * `changes_requested`. That `OR` is deliberate: it's the only place
- * Stage 6 and Stage 7 touch, and it keeps this page correct no matter
- * what Stage 7 eventually does to fulfilmentStatus when it reopens an
- * assignment — the review outcome is the tie-breaker either way.
+ * `changes_requested`. Stage 7's `requestChanges` does set fulfilment
+ * back to `in_progress` when it reopens an assignment (src/lib/domain/
+ * review.ts, decision 3), so the fulfilment-status branch alone is
+ * enough in practice today. The `OR` on the review outcome stays as
+ * belt-and-braces — this page shouldn't have to assume every future
+ * writer of `fulfilmentStatus` gets that transition right.
  */
 function isOutstanding(item: RecipientItemLike): boolean {
   if (item.latestReview?.reviewStatus === 'changes_requested') return true;

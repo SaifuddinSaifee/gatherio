@@ -1,11 +1,13 @@
+import { stat } from 'node:fs/promises';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { scoped } from '@/db/scoped';
 import * as schema from '@/db/schema';
 import { seedFixtureCase, seedRecipientFixture } from '@/db/testing';
-import { writeLocalFile } from '@/lib/adapters/storage.local';
+import { writeLocalFile, localFilePath } from '@/lib/adapters/storage.local';
 import { getScanAdapter } from '@/lib/adapters/scan';
 import {
+  AssignmentClosedError,
   finalizeUpload,
   markCaseViewed,
   recordAnswerSubmission,
@@ -138,6 +140,45 @@ describe('saveDraftAnswer', () => {
       }),
     ).rejects.toThrow('Assignment not found.');
   });
+
+  it('silently no-ops on an already-submitted (closed) assignment — no throw, no write (Stage 7, decision 5)', async () => {
+    const fixture = await seedRecipientFixture();
+    const s = scoped(fixture.workspaceId);
+    const answerRequirementId = fixture.requirementIds[1]!;
+    const [assignment] = await s.db
+      .select()
+      .from(schema.assignment)
+      .where(eq(schema.assignment.requirementId, answerRequirementId));
+
+    await recordAnswerSubmission(fixture.workspaceId, {
+      partyId: fixture.partyId,
+      caseId: fixture.caseId,
+      assignmentId: assignment!.id,
+      actionType: 'answer',
+      value: { fieldType: 'yes_no', yes: true },
+    });
+
+    // AnswerField fires this on every blur and discards the result — it
+    // must never throw, and must never write back over the now-closed
+    // assignment's fulfilmentStatus (the lost-update bug this guard
+    // fixes: the old code re-wrote back whatever status it had read).
+    await expect(
+      saveDraftAnswer(fixture.workspaceId, {
+        partyId: fixture.partyId,
+        caseId: fixture.caseId,
+        assignmentId: assignment!.id,
+        actionType: 'answer',
+        value: 'no', // would-be draft, never applied
+      }),
+    ).resolves.toBeUndefined();
+
+    const [afterDraft] = await s.db
+      .select()
+      .from(schema.assignment)
+      .where(eq(schema.assignment.id, assignment!.id));
+    expect(afterDraft?.fulfilmentStatus).toBe('submitted');
+    expect(afterDraft?.draftValue).toBeNull();
+  });
 });
 
 describe('recordAnswerSubmission', () => {
@@ -160,6 +201,12 @@ describe('recordAnswerSubmission', () => {
 
     expect(result.versionNumber).toBe(1);
 
+    const [version] = await s.db
+      .select()
+      .from(schema.submissionVersion)
+      .where(eq(schema.submissionVersion.id, result.submissionVersionId));
+    expect(version?.supersedesSubmissionId).toBeNull(); // nothing came before it
+
     const [updated] = await s.db
       .select()
       .from(schema.assignment)
@@ -177,7 +224,14 @@ describe('recordAnswerSubmission', () => {
     expect(events.filter((e) => e.eventType === 'assignment.submitted')).toHaveLength(1);
   });
 
-  it('resubmission creates version 2 without touching version 1', async () => {
+  it('rejects a second submit on an already-submitted assignment — v1 is untouched (Stage 7, decision 5)', async () => {
+    // Was "resubmission creates version 2 without touching version 1" —
+    // that's now only reachable after a requester reopens the item
+    // (src/lib/domain/review.ts, not built yet at this point in the
+    // stage). Until then, a second submit on an open-then-submitted
+    // assignment must be rejected, not silently accepted as a
+    // replacement — see the resubmission-after-reopen test in
+    // review.test.ts for the positive case.
     const fixture = await seedRecipientFixture();
     const s = scoped(fixture.workspaceId);
     const answerRequirementId = fixture.requirementIds[1]!;
@@ -193,26 +247,30 @@ describe('recordAnswerSubmission', () => {
       actionType: 'answer',
       value: { fieldType: 'yes_no', yes: true },
     });
-    const second = await recordAnswerSubmission(fixture.workspaceId, {
-      partyId: fixture.partyId,
-      caseId: fixture.caseId,
-      assignmentId: assignment!.id,
-      actionType: 'answer',
-      value: { fieldType: 'yes_no', yes: false },
-    });
 
-    expect(first.versionNumber).toBe(1);
-    expect(second.versionNumber).toBe(2);
-    expect(second.submissionVersionId).not.toBe(first.submissionVersionId);
+    await expect(
+      recordAnswerSubmission(fixture.workspaceId, {
+        partyId: fixture.partyId,
+        caseId: fixture.caseId,
+        assignmentId: assignment!.id,
+        actionType: 'answer',
+        value: { fieldType: 'yes_no', yes: false },
+      }),
+    ).rejects.toThrow(AssignmentClosedError);
 
     const versions = await s.db
       .select()
       .from(schema.submissionVersion)
       .where(eq(schema.submissionVersion.assignmentId, assignment!.id));
-    expect(versions).toHaveLength(2);
+    expect(versions).toHaveLength(1);
+    expect(versions[0]?.id).toBe(first.submissionVersionId);
+    expect(versions[0]?.versionNumber).toBe(1);
 
-    const [firstVersionUntouched] = versions.filter((v) => v.id === first.submissionVersionId);
-    expect(firstVersionUntouched?.versionNumber).toBe(1);
+    const [answerRow] = await s.db
+      .select()
+      .from(schema.submissionAnswer)
+      .where(eq(schema.submissionAnswer.submissionVersionId, first.submissionVersionId));
+    expect(answerRow?.value).toMatchObject({ yes: true }); // v1's own value, untouched
   });
 
   it('rejects submitting against an assignment that belongs to a different case', async () => {
@@ -436,6 +494,215 @@ describe('reserveSubmissionVersion + finalizeUpload', () => {
     const events = await auditEventsFor(fixture.workspaceId, reserved.submissionVersionId);
     const rejected = events.find((e) => e.eventType === 'file.scan_rejected');
     expect(rejected?.metadata).toMatchObject({ outcome: 'infected' });
+  });
+
+  it('rejects reserving a new version on an already-submitted assignment (Stage 7, decision 5)', async () => {
+    const fixture = await seedRecipientFixture();
+    const s = scoped(fixture.workspaceId);
+    const [assignment] = await s.db
+      .select()
+      .from(schema.assignment)
+      .where(eq(schema.assignment.requirementId, fixture.requirementIds[0]!));
+
+    const reserved = await reserveSubmissionVersion(fixture.workspaceId, {
+      partyId: fixture.partyId,
+      caseId: fixture.caseId,
+      assignmentId: assignment!.id,
+      originalFilename: 'statement.pdf',
+      contentType: 'application/pdf',
+      declaredBytes: 11,
+    });
+    async function* body() {
+      yield new TextEncoder().encode('hello world');
+    }
+    await writeLocalFile(reserved.key, body());
+    const finalized = await finalizeUpload(fixture.workspaceId, {
+      partyId: fixture.partyId,
+      caseId: fixture.caseId,
+      ticket: {
+        submissionVersionId: reserved.submissionVersionId,
+        key: reserved.key,
+        contentType: 'application/pdf',
+        originalFilename: 'statement.pdf',
+        maxBytes: 1_000_000,
+        exp: Date.now() + 60_000,
+      },
+    });
+    expect(finalized.ok).toBe(true);
+
+    // The item is now submitted (awaiting review) — a second reservation
+    // must not be allowed to start replacing it.
+    await expect(
+      reserveSubmissionVersion(fixture.workspaceId, {
+        partyId: fixture.partyId,
+        caseId: fixture.caseId,
+        assignmentId: assignment!.id,
+        originalFilename: 'statement-v2.pdf',
+        contentType: 'application/pdf',
+        declaredBytes: 11,
+      }),
+    ).rejects.toThrow(AssignmentClosedError);
+
+    const versions = await s.db
+      .select()
+      .from(schema.submissionVersion)
+      .where(eq(schema.submissionVersion.assignmentId, assignment!.id));
+    expect(versions).toHaveLength(1); // no orphan second reservation
+  });
+
+  it('finalize returns not_found when the ticket names an assignment belonging to a different party', async () => {
+    const fixtureA = await seedRecipientFixture();
+    const fixtureB = await seedFixtureCase({
+      workspaceId: fixtureA.workspaceId,
+      userId: fixtureA.userId,
+    });
+    const s = scoped(fixtureA.workspaceId);
+    const [assignmentB] = await s.db
+      .select()
+      .from(schema.assignment)
+      .where(eq(schema.assignment.requirementId, fixtureB.requirementIds[0]!));
+
+    const reserved = await reserveSubmissionVersion(fixtureA.workspaceId, {
+      partyId: fixtureB.partyId,
+      caseId: fixtureB.caseId,
+      assignmentId: assignmentB!.id,
+      originalFilename: 'a.pdf',
+      contentType: 'application/pdf',
+      declaredBytes: 5,
+    });
+    async function* body() {
+      yield new TextEncoder().encode('hello');
+    }
+    await writeLocalFile(reserved.key, body());
+
+    const result = await finalizeUpload(fixtureA.workspaceId, {
+      partyId: fixtureA.partyId, // fixture A's party — not fixture B's
+      caseId: fixtureB.caseId,
+      ticket: {
+        submissionVersionId: reserved.submissionVersionId,
+        key: reserved.key,
+        contentType: 'application/pdf',
+        originalFilename: 'a.pdf',
+        maxBytes: 1_000_000,
+        exp: Date.now() + 60_000,
+      },
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('a replayed confirm of an already-finalized ticket returns ok and deletes nothing', async () => {
+    const fixture = await seedRecipientFixture();
+    const s = scoped(fixture.workspaceId);
+    const [assignment] = await s.db
+      .select()
+      .from(schema.assignment)
+      .where(eq(schema.assignment.requirementId, fixture.requirementIds[0]!));
+
+    const reserved = await reserveSubmissionVersion(fixture.workspaceId, {
+      partyId: fixture.partyId,
+      caseId: fixture.caseId,
+      assignmentId: assignment!.id,
+      originalFilename: 'statement.pdf',
+      contentType: 'application/pdf',
+      declaredBytes: 11,
+    });
+    async function* body() {
+      yield new TextEncoder().encode('hello world');
+    }
+    await writeLocalFile(reserved.key, body());
+
+    const ticket = {
+      submissionVersionId: reserved.submissionVersionId,
+      key: reserved.key,
+      contentType: 'application/pdf',
+      originalFilename: 'statement.pdf',
+      maxBytes: 1_000_000,
+      exp: Date.now() + 60_000,
+    };
+    const first = await finalizeUpload(fixture.workspaceId, {
+      partyId: fixture.partyId,
+      caseId: fixture.caseId,
+      ticket,
+    });
+    expect(first.ok).toBe(true);
+
+    const second = await finalizeUpload(fixture.workspaceId, {
+      partyId: fixture.partyId,
+      caseId: fixture.caseId,
+      ticket,
+    });
+    expect(second).toEqual(first); // same fileAssetId, never discarded
+
+    const fileAssets = await s.db
+      .select()
+      .from(schema.fileAsset)
+      .where(eq(schema.fileAsset.submissionVersionId, reserved.submissionVersionId));
+    expect(fileAssets).toHaveLength(1); // still exactly one — the replay wrote nothing
+
+    const versions = await s.db
+      .select()
+      .from(schema.submissionVersion)
+      .where(eq(schema.submissionVersion.id, reserved.submissionVersionId));
+    expect(versions).toHaveLength(1); // not discarded by the replay
+  });
+
+  it('discards and deletes the object when the assignment closes between reserve and finalize', async () => {
+    const fixture = await seedRecipientFixture();
+    const s = scoped(fixture.workspaceId);
+    const [assignment] = await s.db
+      .select()
+      .from(schema.assignment)
+      .where(eq(schema.assignment.requirementId, fixture.requirementIds[0]!));
+
+    const reserved = await reserveSubmissionVersion(fixture.workspaceId, {
+      partyId: fixture.partyId,
+      caseId: fixture.caseId,
+      assignmentId: assignment!.id,
+      originalFilename: 'statement.pdf',
+      contentType: 'application/pdf',
+      declaredBytes: 11,
+    });
+    async function* body() {
+      yield new TextEncoder().encode('hello world');
+    }
+    await writeLocalFile(reserved.key, body());
+
+    // Simulate the item closing by some other path (e.g. an approval on a
+    // different completed version) while this upload was still in
+    // flight — direct DB write, since review.ts doesn't exist yet at
+    // this point in the stage.
+    await s.db
+      .update(schema.assignment)
+      .set({ fulfilmentStatus: 'submitted' })
+      .where(eq(schema.assignment.id, assignment!.id));
+
+    const result = await finalizeUpload(fixture.workspaceId, {
+      partyId: fixture.partyId,
+      caseId: fixture.caseId,
+      ticket: {
+        submissionVersionId: reserved.submissionVersionId,
+        key: reserved.key,
+        contentType: 'application/pdf',
+        originalFilename: 'statement.pdf',
+        maxBytes: 1_000_000,
+        exp: Date.now() + 60_000,
+      },
+    });
+
+    expect(result).toEqual({ ok: false, reason: 'closed' });
+
+    const versions = await s.db
+      .select()
+      .from(schema.submissionVersion)
+      .where(eq(schema.submissionVersion.id, reserved.submissionVersionId));
+    expect(versions).toHaveLength(0); // the reservation was discarded
+
+    await expect(stat(localFilePath(reserved.key))).rejects.toThrow(); // the object was deleted
+
+    const events = await auditEventsFor(fixture.workspaceId, reserved.submissionVersionId);
+    const rejected = events.find((e) => e.eventType === 'submission.upload_rejected');
+    expect(rejected?.metadata).toMatchObject({ reason: 'assignment_closed' });
   });
 
   it('two concurrent reservations on the same assignment never produce the same version number', async () => {

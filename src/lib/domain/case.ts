@@ -4,6 +4,15 @@ import * as schema from '@/db/schema';
 import { withAudit } from '@/db/audit';
 import { generateAccessToken } from '@/lib/token';
 import { getLatestVersion, listRequirementDefinitions } from './template';
+import {
+  deriveCaseStatus,
+  deriveItemState,
+  loadCaseStatusInputs,
+  type CompletedKind,
+  type ItemState,
+  type ReviewDecision,
+} from './case-status';
+import { loadAssignmentHistory, type HistoryEntry } from './submission-history';
 
 const ACCESS_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -126,6 +135,15 @@ export async function instantiateCase(
   return { ...result, token };
 }
 
+/**
+ * Stage 7: `submittedRequirements` (a fulfilment-only count) is replaced
+ * by the derived case status and its counts — "submitted" stopped being
+ * the interesting fact once review exists; "accepted" is. The status
+ * inputs are loaded for every case in this workspace in one batched
+ * `loadCaseStatusInputs` call (three queries total, not three per case),
+ * then grouped in memory — the template-name/party lookups below stay
+ * N+1 per case, the existing accepted precedent in this function.
+ */
 export async function listCases(workspaceId: WorkspaceId) {
   const s = scoped(workspaceId);
   const cases = await s.db
@@ -133,6 +151,18 @@ export async function listCases(workspaceId: WorkspaceId) {
     .from(schema.caseTable)
     .where(s.where(schema.caseTable.workspaceId))
     .orderBy(desc(schema.caseTable.createdAt));
+
+  const statusInputs = await loadCaseStatusInputs(
+    s.db,
+    workspaceId,
+    cases.map((c) => c.id),
+  );
+  const inputsByCase = new Map<string, typeof statusInputs>();
+  for (const item of statusInputs) {
+    const list = inputsByCase.get(item.caseId);
+    if (list) list.push(item);
+    else inputsByCase.set(item.caseId, [item]);
+  }
 
   const results = [];
   for (const caseRow of cases) {
@@ -153,23 +183,35 @@ export async function listCases(workspaceId: WorkspaceId) {
       .orderBy(asc(schema.party.createdAt))
       .limit(1);
 
-    const assignments = await s.db
-      .select({ fulfilmentStatus: schema.assignment.fulfilmentStatus })
-      .from(schema.assignment)
-      .innerJoin(schema.requirement, eq(schema.assignment.requirementId, schema.requirement.id))
-      .where(eq(schema.requirement.caseId, caseRow.id));
-
-    const submitted = assignments.filter((a) => a.fulfilmentStatus === 'submitted').length;
+    const items = inputsByCase.get(caseRow.id) ?? [];
+    const { status, counts } = deriveCaseStatus(
+      items.map((i) => ({
+        required: i.required,
+        state: deriveItemState({
+          fulfilmentStatus: i.fulfilmentStatus,
+          latestKind: i.latestKind,
+          latestReviewStatus: i.latestReviewStatus,
+        }),
+      })),
+    );
 
     results.push({
       case: caseRow,
       templateName: templateInfo?.templateName ?? 'Unknown template',
       party: party ?? null,
-      totalRequirements: assignments.length,
-      submittedRequirements: submitted,
+      totalRequirements: items.length,
+      status,
+      counts,
     });
   }
   return results;
+}
+
+export interface CaseRequirementItem {
+  requirement: typeof schema.requirement.$inferSelect;
+  assignment: typeof schema.assignment.$inferSelect | null;
+  history: HistoryEntry[];
+  state: ItemState;
 }
 
 export async function getCaseDetail(workspaceId: WorkspaceId, caseId: string) {
@@ -198,7 +240,7 @@ export async function getCaseDetail(workspaceId: WorkspaceId, caseId: string) {
     .orderBy(asc(schema.party.createdAt))
     .limit(1);
 
-  const requirements = await s.db
+  const requirementRows = await s.db
     .select({
       requirement: schema.requirement,
       assignment: schema.assignment,
@@ -208,12 +250,48 @@ export async function getCaseDetail(workspaceId: WorkspaceId, caseId: string) {
     .where(eq(schema.requirement.caseId, caseId))
     .orderBy(asc(schema.requirement.sequence));
 
+  // Stage 7: each item gets its full completed-version history (for the
+  // "Earlier versions" disclosure) and a derived state — computed here,
+  // per assignment, rather than via case-status.ts's batched
+  // loadCaseStatusInputs, since loadAssignmentHistory's result already
+  // gives us everything deriveItemState needs and the requester's case
+  // page wants the history anyway; a second, different query for the
+  // same "latest kind/review" fact would be pure waste on a page that
+  // only ever loads one case.
+  const requirements: CaseRequirementItem[] = [];
+  const statusItems: { required: boolean; state: ItemState }[] = [];
+
+  for (const row of requirementRows) {
+    let history: HistoryEntry[] = [];
+    let state: ItemState = 'awaiting_recipient';
+
+    if (row.assignment) {
+      history = await loadAssignmentHistory(s.db, workspaceId, row.assignment.id);
+      const latest = history[0] ?? null;
+      const latestKind: CompletedKind | null = latest
+        ? (latest.fileAsset ? 'file' : (latest.answer?.fieldType ?? null))
+        : null;
+      state = deriveItemState({
+        fulfilmentStatus: row.assignment.fulfilmentStatus,
+        latestKind,
+        latestReviewStatus: (latest?.latestReview?.reviewStatus as ReviewDecision | undefined) ?? null,
+      });
+    }
+
+    requirements.push({ ...row, history, state });
+    statusItems.push({ required: row.requirement.required, state });
+  }
+
+  const { status, counts } = deriveCaseStatus(statusItems);
+
   return {
     case: caseRow,
     templateName: templateInfo?.templateName ?? 'Unknown template',
     templateVersionNumber: templateInfo?.version ?? null,
     party: party ?? null,
     requirements,
+    status,
+    counts,
   };
 }
 

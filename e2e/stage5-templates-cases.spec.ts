@@ -88,10 +88,12 @@ test('template lifecycle: draft, add requirements, publish, instantiate a case, 
   await expect(page.getByText('Any new subcontractors?')).toBeVisible();
   await expect(page.getByText('Pending').first()).toBeVisible();
 
-  // Dashboard reflects the new case, unsubmitted.
+  // Dashboard reflects the new case, unsubmitted. Stage 7: the summary
+  // counts required items only — "Any new subcontractors?" was toggled
+  // optional above, so the denominator is 1, not 2.
   await page.goto('/dashboard');
   await expect(page.getByText('Acme Corp Onboarding')).toBeVisible();
-  await expect(page.getByText('0 of 2 submitted')).toBeVisible();
+  await expect(page.getByText('0 of 1 accepted')).toBeVisible();
 
   // Now edit the template: create a new draft version and delete one requirement from it.
   await page.goto(templateUrl);
